@@ -1,6 +1,6 @@
 package com.example.subtrackai.ui.screens
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -113,6 +113,7 @@ fun FeedScreen(
                         post = post, 
                         onLikeToggle = { viewModel.toggleLike(post.id) },
                         onProfileClick = { onNavigateToProfile(post.userId) },
+                        onOriginalProfileClick = { authorId -> onNavigateToProfile(authorId) },
                         isOwner = post.userId == currentUserId,
                         onDelete = { viewModel.deletePost(post.id) },
                         onEdit = { newContent -> viewModel.editPost(post.id, newContent) },
@@ -206,6 +207,7 @@ fun CommentSheet(
 ) {
     var comments by remember { mutableStateOf<List<com.example.subtrackai.model.Comment>>(emptyList()) }
     var text by remember { mutableStateOf("") }
+    var replyingTo by remember { mutableStateOf<com.example.subtrackai.model.Comment?>(null) }
     val userProfile by socialViewModel.userProfile.collectAsState()
 
     LaunchedEffect(postId) {
@@ -218,19 +220,48 @@ fun CommentSheet(
         text = {
             Column(modifier = Modifier.heightIn(max = 400.dp)) {
                 LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(comments) { comment ->
+                    val topLevelComments = comments.filter { it.parentCommentId == null }
+                    items(topLevelComments) { comment ->
                         CommentItem(
                             comment = comment,
                             isOwner = comment.userId == currentUserId,
-                            onDelete = { socialViewModel.deleteComment(postId, comment.id) }
+                            onDelete = { socialViewModel.deleteComment(postId, comment.id) },
+                            onReply = { replyingTo = comment }
                         )
+                        
+                        // Render Sub-comments
+                        val replies = comments.filter { it.parentCommentId == comment.id }
+                        replies.forEach { reply ->
+                            Box(modifier = Modifier.padding(start = 32.dp)) {
+                                CommentItem(
+                                    comment = reply,
+                                    isOwner = reply.userId == currentUserId,
+                                    onDelete = { socialViewModel.deleteComment(postId, reply.id) },
+                                    onReply = { replyingTo = reply }
+                                )
+                            }
+                        }
                     }
                 }
+                
+                if (replyingTo != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Replying to ${replyingTo!!.authorName}", fontSize = 12.sp, color = DeepPurple)
+                        IconButton(onClick = { replyingTo = null }, modifier = Modifier.size(16.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = null)
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
-                    placeholder = { Text("Add a comment...") },
+                    placeholder = { Text(if (replyingTo != null) "Write a reply..." else "Add a comment...") },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -238,8 +269,14 @@ fun CommentSheet(
         confirmButton = {
             TextButton(onClick = {
                 if (text.isNotBlank()) {
-                    socialViewModel.addComment(postId, text, userProfile?.profileIcon ?: "Person")
+                    socialViewModel.addComment(
+                        postId = postId, 
+                        text = text, 
+                        profileIcon = userProfile?.profileIcon ?: "Person",
+                        parentId = replyingTo?.id
+                    )
                     text = ""
+                    replyingTo = null
                 }
             }) { Text("Post") }
         },
@@ -250,9 +287,14 @@ fun CommentSheet(
 }
 
 @Composable
-fun CommentItem(comment: com.example.subtrackai.model.Comment, isOwner: Boolean, onDelete: () -> Unit) {
+fun CommentItem(
+    comment: com.example.subtrackai.model.Comment, 
+    isOwner: Boolean, 
+    onDelete: () -> Unit,
+    onReply: () -> Unit
+) {
     Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.Top) {
-        Surface(modifier = Modifier.size(32.dp), shape = CircleShape, color = com.example.subtrackai.ui.theme.DeepPurple.copy(alpha = 0.1f)) {
+        Surface(modifier = Modifier.size(32.dp), shape = CircleShape, color = DeepPurple.copy(alpha = 0.1f)) {
             Box(contentAlignment = Alignment.Center) {
                 Text(comment.authorName.take(1).uppercase(), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
@@ -261,6 +303,10 @@ fun CommentItem(comment: com.example.subtrackai.model.Comment, isOwner: Boolean,
         Column(modifier = Modifier.weight(1f)) {
             Text(comment.authorName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
             Text(comment.text, fontSize = 13.sp)
+            
+            TextButton(onClick = onReply, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
+                Text("Reply", fontSize = 11.sp, color = DeepPurple)
+            }
         }
         if (isOwner) {
             IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
@@ -275,6 +321,7 @@ fun PostItem(
     post: Post, 
     onLikeToggle: () -> Unit, 
     onProfileClick: () -> Unit,
+    onOriginalProfileClick: (String) -> Unit = {},
     isOwner: Boolean,
     onDelete: () -> Unit,
     onEdit: (String) -> Unit,
@@ -293,6 +340,23 @@ fun PostItem(
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            if (post.shared) {
+                Surface(
+                    color = DeepPurple.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(12.dp), tint = DeepPurple)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Shared a post", fontSize = 10.sp, color = DeepPurple, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -369,12 +433,58 @@ fun PostItem(
                     }
                 )
             } else {
-                Text(post.content, fontSize = 15.sp)
+                if (post.shared) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                            .clickable { 
+                                post.originalAuthorId?.let { onOriginalProfileClick(it) }
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f)),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    modifier = Modifier.size(28.dp), 
+                                    shape = CircleShape, 
+                                    color = DeepPurple.copy(alpha = 0.1f)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            post.originalAuthorName?.take(1)?.uppercase() ?: "?", 
+                                            fontSize = 12.sp, 
+                                            fontWeight = FontWeight.Bold,
+                                            color = DeepPurple
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    post.originalAuthorName ?: "Unknown", 
+                                    fontWeight = FontWeight.Bold, 
+                                    fontSize = 14.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                post.content, 
+                                fontSize = 14.sp,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    Text(post.content, fontSize = 15.sp)
+                }
             }
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            Divider(color = Color.LightGray.copy(alpha = 0.5f))
+            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
             
             Row(
                 modifier = Modifier.fillMaxWidth(),

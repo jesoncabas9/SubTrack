@@ -13,8 +13,9 @@ data class Post(
     val likes: Int = 0,
     val likedBy: List<String> = emptyList(),
     val commentsEnabled: Boolean = true,
-    val isShared: Boolean = false,
+    val shared: Boolean = false,
     val originalPostId: String? = null,
     val originalAuthorName: String? = null,
+    val originalAuthorId: String? = null,
     val profilePost: Boolean = false // True if posted directly to profile
 )

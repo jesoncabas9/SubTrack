@@ -92,16 +92,22 @@ class SocialViewModel : ViewModel() {
             .whereLessThanOrEqualTo("username", query + "\uf8ff")
             .get()
             .addOnSuccessListener {
-                onResult(it.toObjects(UserProfile::class.java))
+                val currentUid = auth.currentUser?.uid
+                val users = it.toObjects(UserProfile::class.java).filter { it.uid != currentUid }
+                onResult(users)
             }
     }
 
     fun sendFriendRequest(toUser: UserProfile) {
         val currentUser = auth.currentUser ?: return
-        val request = FriendRequest(
-            fromId = currentUser.uid,
-            fromName = _userProfile.value?.username ?: "Unknown",
-            toId = toUser.uid
+        if (toUser.uid == currentUser.uid) return // Cannot friend self
+        
+        val request = mapOf(
+            "fromId" to currentUser.uid,
+            "fromName" to (_userProfile.value?.username ?: "Unknown"),
+            "toId" to toUser.uid,
+            "status" to "pending",
+            "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
         )
         firestore.collection("friendRequests").add(request)
     }
@@ -118,17 +124,23 @@ class SocialViewModel : ViewModel() {
 
     fun updateUserStatus(status: String) {
         val uid = auth.currentUser?.uid ?: return
-        firestore.collection("users").document(uid).update("userStatus", status)
+        val updates = mapOf(
+            "userStatus" to status,
+            "isOnline" to (status == "Online")
+        )
+        firestore.collection("users").document(uid).update(updates)
     }
 
-    fun addComment(postId: String, text: String, profileIcon: String) {
+    fun addComment(postId: String, text: String, profileIcon: String, parentId: String? = null) {
         val user = auth.currentUser ?: return
-        val comment = Comment(
-            postId = postId,
-            userId = user.uid,
-            authorName = _userProfile.value?.username ?: "User",
-            profileIcon = profileIcon,
-            text = text
+        val comment = mapOf(
+            "postId" to postId,
+            "userId" to user.uid,
+            "authorName" to (_userProfile.value?.username ?: "User"),
+            "profileIcon" to profileIcon,
+            "text" to text,
+            "parentCommentId" to parentId,
+            "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
         )
         firestore.collection("posts").document(postId).collection("comments").add(comment)
     }
@@ -147,16 +159,18 @@ class SocialViewModel : ViewModel() {
 
     fun sharePostToProfile(post: Post) {
         val user = auth.currentUser ?: return
-        val sharedPost = post.copy(
-            id = "", // Let Firestore generate new ID
+        val sharedPost = Post(
             userId = user.uid,
             authorName = _userProfile.value?.username ?: "User",
-            isShared = true,
+            content = post.content,
+            shared = true,
             originalPostId = post.id,
             originalAuthorName = post.authorName,
+            originalAuthorId = post.userId,
             likes = 0,
             likedBy = emptyList(),
-            timestamp = null // Server timestamp will handle this
+            commentsEnabled = true,
+            profilePost = true
         )
         firestore.collection("posts").add(sharedPost)
     }

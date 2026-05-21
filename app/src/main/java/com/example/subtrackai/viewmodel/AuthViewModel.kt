@@ -3,6 +3,7 @@ package com.example.subtrackai.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.subtrackai.model.UserProfile
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
@@ -50,22 +51,22 @@ class AuthViewModel : ViewModel() {
     }
 
     fun signUp(email: String, pass: String, fullName: String, username: String, profileIcon: String, currency: String = "$") {
-        _authState.value = AuthState.Loading
+        _authState.value = AuthState.SignUpLoading
         auth.createUserWithEmailAndPassword(email, pass)
             .addOnSuccessListener { result ->
                 val user = result.user
                 val uid = user?.uid ?: return@addOnSuccessListener
                 
-                val userData = mapOf(
-                    "uid" to uid,
-                    "fullName" to fullName,
-                    "username" to username,
-                    "email" to email,
-                    "profileIcon" to profileIcon,
-                    "bio" to "New to SubTrack!",
-                    "showSubscriptions" to true,
-                    "friendsCount" to 0,
-                    "currency" to currency
+                val userData = UserProfile(
+                    uid = uid,
+                    fullName = fullName,
+                    username = username,
+                    email = email,
+                    profileIcon = profileIcon,
+                    bio = "New to SubTrack!",
+                    showSubscriptions = true,
+                    friendsCount = 0,
+                    currency = currency
                 )
                 
                 // Update Firebase User Profile
@@ -136,6 +137,7 @@ class AuthViewModel : ViewModel() {
     sealed class AuthState {
         object Idle : AuthState()
         object Loading : AuthState()
+        object SignUpLoading : AuthState()
         data class Success(val message: String) : AuthState()
         object SignUpSuccess : AuthState()
         data class Error(val message: String) : AuthState()

@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -40,6 +43,7 @@ fun SignUpScreen(
     var password by remember { mutableStateOf("") }
     var selectedIcon by remember { mutableStateOf("Person") }
     var selectedCurrency by remember { mutableStateOf("$") }
+    var showInstructions by remember { mutableStateOf(false) }
     
     val authState by viewModel.authState.collectAsState()
     val context = LocalContext.current
@@ -48,13 +52,31 @@ fun SignUpScreen(
 
     LaunchedEffect(authState) {
         if (authState is AuthViewModel.AuthState.SignUpSuccess) {
-            Toast.makeText(context, "Account created! Verification email sent.", Toast.LENGTH_LONG).show()
-            onNavigateToLogin()
+            showInstructions = true
             viewModel.resetState()
         } else if (authState is AuthViewModel.AuthState.Error) {
             Toast.makeText(context, (authState as AuthViewModel.AuthState.Error).message, Toast.LENGTH_LONG).show()
             viewModel.resetState()
         }
+    }
+
+    if (showInstructions) {
+        AlertDialog(
+            onDismissRequest = { 
+                showInstructions = false
+                onNavigateToLogin()
+            },
+            title = { Text("Account Created!") },
+            text = { Text("Please check your email ($email) for a verification link. Click the link to activate your account before logging in.") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showInstructions = false
+                    onNavigateToLogin()
+                }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 
     Box(
@@ -131,6 +153,8 @@ fun SignUpScreen(
                         onValueChange = { fullName = it },
                         label = { Text("Full Name", color = Color.White) },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -146,6 +170,8 @@ fun SignUpScreen(
                         onValueChange = { username = it },
                         label = { Text("Username", color = Color.White) },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -161,6 +187,11 @@ fun SignUpScreen(
                         onValueChange = { email = it },
                         label = { Text("Email Address", color = Color.White) },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
+                        ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -177,6 +208,11 @@ fun SignUpScreen(
                         label = { Text("New Password", color = Color.White) },
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,

@@ -19,9 +19,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.subtrackai.model.Post
 import com.example.subtrackai.model.UserProfile
 import com.example.subtrackai.ui.components.EditProfileDialog
+import com.example.subtrackai.ui.screens.CommentSheet
 import com.example.subtrackai.ui.theme.DeepPurple
 import com.example.subtrackai.util.ProfileIcons
 import com.example.subtrackai.viewmodel.AuthViewModel
@@ -34,18 +34,22 @@ fun ProfileScreen(
     socialViewModel: SocialViewModel,
     onBack: () -> Unit,
     onNavigateToCreatePost: () -> Unit,
+    onNavigateToProfile: (String) -> Unit = {},
     visitorUserId: String? = null
 ) {
     val currentUserProfile by socialViewModel.userProfile.collectAsState()
     var visitorProfile by remember { mutableStateOf<UserProfile?>(null) }
     
-    val isOwner = visitorUserId == null
+    val isOwner = visitorUserId == null || visitorUserId == currentUserProfile?.uid
     val profile = if (isOwner) currentUserProfile else visitorProfile
     
     val feedViewModel: com.example.subtrackai.viewmodel.FeedViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val allPosts by feedViewModel.posts.collectAsState()
-    val profilePosts = allPosts.filter { it.userId == (visitorUserId ?: currentUserProfile?.uid) }
+    val profilePosts = allPosts.filter { 
+        it.userId == (visitorUserId ?: currentUserProfile?.uid) && it.profilePost 
+    }
 
+    var commentPostId by remember { mutableStateOf<String?>(null) }
     var showEditDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(visitorUserId) {
@@ -100,7 +104,7 @@ fun ProfileScreen(
 
                     if (profile?.uid?.isNotEmpty() == true) {
                         Surface(
-                            color = if (profile.isOnline) Color(0xFF4CAF50).copy(alpha = 0.1f) else Color.Gray.copy(alpha = 0.1f),
+                            color = if (profile.userStatus == "Online") Color(0xFF4CAF50).copy(alpha = 0.1f) else Color.Gray.copy(alpha = 0.1f),
                             shape = RoundedCornerShape(16.dp)
                         ) {
                             Row(
@@ -111,13 +115,13 @@ fun ProfileScreen(
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(if (profile.isOnline) Color(0xFF4CAF50) else Color.Gray)
+                                        .background(if (profile.userStatus == "Online") Color(0xFF4CAF50) else Color.Gray)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (profile.isOnline) "Online" else "Offline",
+                                    text = profile.userStatus,
                                     fontSize = 12.sp,
-                                    color = if (profile.isOnline) Color(0xFF4CAF50) else Color.Gray
+                                    color = if (profile.userStatus == "Online") Color(0xFF4CAF50) else Color.Gray
                                 )
                             }
                         }
@@ -149,13 +153,20 @@ fun ProfileScreen(
                             Text("Edit Profile")
                         }
                     } else {
+                        var requestSent by remember { mutableStateOf(false) }
                         Button(
-                            onClick = { profile?.let { socialViewModel.sendFriendRequest(it) } },
+                            onClick = { 
+                                profile?.let { 
+                                    socialViewModel.sendFriendRequest(it)
+                                    requestSent = true
+                                } 
+                            },
                             modifier = Modifier.fillMaxWidth(),
+                            enabled = !requestSent,
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+                            colors = ButtonDefaults.buttonColors(containerColor = if (requestSent) Color.Gray else DeepPurple)
                         ) {
-                            Text("Add Friend")
+                            Text(if (requestSent) "Request Sent" else "Add Friend")
                         }
                     }
                 }
@@ -202,20 +213,36 @@ fun ProfileScreen(
             }
 
             items(profilePosts) { post ->
+                val currentUserId = currentUserProfile?.uid ?: ""
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     PostItem(
                         post = post,
                         onLikeToggle = { feedViewModel.toggleLike(post.id) },
                         onProfileClick = { },
-                        isOwner = isOwner,
+                        onOriginalProfileClick = { authorId -> 
+                            if (authorId != (visitorUserId ?: currentUserProfile?.uid)) {
+                                onNavigateToProfile(authorId)
+                            }
+                        },
+                        isOwner = post.userId == currentUserId,
                         onDelete = { feedViewModel.deletePost(post.id) },
                         onEdit = { newContent -> feedViewModel.editPost(post.id, newContent) },
-                        onCommentClick = { }, // Implement if needed
-                        onShare = { },
+                        onCommentClick = { commentPostId = post.id },
+                        onShare = { socialViewModel.sharePostToProfile(post) },
                         onToggleComments = { feedViewModel.editPost(post.id, if (post.commentsEnabled) "OFF" else "ON") }
                     )
                 }
             }
+        }
+
+        if (commentPostId != null) {
+            CommentSheet(
+                postId = commentPostId!!,
+                currentUserId = currentUserProfile?.uid ?: "",
+                viewModel = feedViewModel,
+                socialViewModel = socialViewModel,
+                onDismiss = { commentPostId = null }
+            )
         }
 
         if (showEditDialog && currentUserProfile != null) {

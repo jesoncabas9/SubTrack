@@ -57,7 +57,9 @@ fun AppNavigation() {
         } else if (authState is AuthViewModel.AuthState.Loading) {
             Box(modifier = Modifier.fillMaxSize().background(com.example.subtrackai.ui.theme.DeepPurple)) {
                 LoadingScreen(
-                    message = if (currentUser != null) "Signing out..." else "Signing in..."
+                    message = if (authState is AuthViewModel.AuthState.SignUpLoading) 
+                        "Signing Up...\n\nPlease check your email for a verification link." 
+                        else if (currentUser != null) "Signing out..." else "Signing in..."
                 )
             }
         } else {
@@ -117,7 +119,8 @@ fun AppNavigation() {
                         authViewModel = authViewModel,
                         socialViewModel = socialViewModel,
                         onBack = { navController.popBackStack() },
-                        onNavigateToCreatePost = { navController.navigate("create_post_profile") }
+                        onNavigateToCreatePost = { navController.navigate("create_post_profile") },
+                        onNavigateToProfile = { userId -> navController.navigate("profile_view/$userId") }
                     )
                 }
 
@@ -128,6 +131,7 @@ fun AppNavigation() {
                         socialViewModel = socialViewModel,
                         onBack = { navController.popBackStack() },
                         onNavigateToCreatePost = {}, // Visitors can't post to someone else's profile
+                        onNavigateToProfile = { otherId -> navController.navigate("profile_view/$otherId") },
                         visitorUserId = userId
                     )
                 }

@@ -36,7 +36,11 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         val uid = authViewModel.currentUser?.uid
         if (uid != null) {
-            firestore.collection("users").document(uid).update("isOnline", true)
+            val updates = mapOf(
+                "isOnline" to true,
+                "userStatus" to "Online"
+            )
+            firestore.collection("users").document(uid).update(updates)
         }
     }
 
@@ -44,7 +48,11 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         val uid = authViewModel.currentUser?.uid
         if (uid != null) {
-            firestore.collection("users").document(uid).update("isOnline", false)
+            val updates = mapOf(
+                "isOnline" to false,
+                "userStatus" to "Offline"
+            )
+            firestore.collection("users").document(uid).update(updates)
         }
     }
 }

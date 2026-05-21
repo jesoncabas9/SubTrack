@@ -25,6 +25,9 @@ import androidx.compose.ui.res.painterResource
 import com.example.subtrackai.R
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import com.example.subtrackai.ui.components.FloatingBackgroundObjects
 import com.example.subtrackai.ui.components.JumpingDotsLoading
 import com.example.subtrackai.ui.theme.DeepBlue
@@ -114,6 +117,11 @@ fun LoginScreen(
                         onValueChange = { email = it },
                         label = { Text("Email", color = Color.White) },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
+                        ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White,
@@ -130,6 +138,11 @@ fun LoginScreen(
                         onValueChange = { password = it },
                         label = { Text("Password", color = Color.White) },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
                         trailingIcon = {
                             val image = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {

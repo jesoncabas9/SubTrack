@@ -11,5 +11,6 @@ data class Comment(
     val authorName: String = "",
     val profileIcon: String = "Person",
     val text: String = "",
+    val parentCommentId: String? = null, // ID of the comment this is replying to
     @ServerTimestamp val timestamp: Date? = null
 )

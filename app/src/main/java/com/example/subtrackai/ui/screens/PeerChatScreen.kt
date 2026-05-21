@@ -8,9 +8,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,7 +41,14 @@ fun PeerChatScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(selectedUser?.username ?: "Chat", fontWeight = FontWeight.Bold) },
+                title = { Text(selectedUser?.username ?: "Messages", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    if (selectedUser != null) {
+                        IconButton(onClick = { selectedUser = null }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
                 windowInsets = WindowInsets(0.dp)
             )
         }
