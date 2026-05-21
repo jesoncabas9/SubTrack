@@ -13,7 +13,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,6 +27,7 @@ import com.example.subtrackai.ui.theme.DeepBlue
 import com.example.subtrackai.ui.theme.DeepPurple
 import com.example.subtrackai.viewmodel.DashboardViewModel
 import com.example.subtrackai.viewmodel.SettingsViewModel
+import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -37,6 +40,7 @@ fun DashboardScreen(
     isDarkMode: Boolean
 ) {
     val subscriptions by viewModel.filteredSubscriptions.collectAsState()
+    val allSubscriptions by viewModel.subscriptions.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val totalSpend by viewModel.totalMonthlySpend.collectAsState()
@@ -56,80 +60,6 @@ fun DashboardScreen(
     var editingSubscription by remember { mutableStateOf<Subscription?>(null) }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    if (!isSearching) {
-                        Row(modifier = Modifier.padding(start = 16.dp)) {
-                            Image(
-                                painter = painterResource(id = R.drawable.subtrack_logo),
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp)
-                            )
-                        }
-                    }
-                },
-                title = { 
-                    if (isSearching) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { viewModel.onSearchQueryChange(it) },
-                            placeholder = { Text("Search...") },
-                            modifier = Modifier.fillMaxWidth(0.95f).height(52.dp),
-                            shape = RoundedCornerShape(24.dp),
-                            singleLine = true,
-                            trailingIcon = {
-                                IconButton(onClick = { 
-                                    isSearching = false
-                                    viewModel.onSearchQueryChange("")
-                                }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Close Search")
-                                }
-                            }
-                        )
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "SubTrack",
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isDarkMode) Color.White else DeepPurple,
-                                modifier = Modifier.padding(start = 16.dp)
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    if (!isSearching) {
-                        IconButton(onClick = { isSearching = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
-                        }
-                        IconButton(onClick = onNavigateToAnalytics) {
-                            Icon(Icons.Default.BarChart, contentDescription = "Analytics")
-                        }
-                        IconButton(onClick = onNavigateToProfile) {
-                            Surface(
-                                modifier = Modifier.size(32.dp),
-                                shape = CircleShape,
-                                color = DeepPurple.copy(alpha = 0.1f)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        com.example.subtrackai.util.ProfileIcons.getIcon(userProfile?.profileIcon),
-                                        contentDescription = "Profile",
-                                        modifier = Modifier.size(20.dp),
-                                        tint = DeepPurple
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                windowInsets = WindowInsets(0.dp)
-            )
-        },
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End) {
                 FloatingActionButton(
@@ -154,9 +84,29 @@ fun DashboardScreen(
     ) { padding ->
         Column(
             modifier = Modifier
-                .padding(padding)
                 .fillMaxSize()
         ) {
+            // Search Bar
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { viewModel.onSearchQueryChange(it) },
+                placeholder = { Text("Search subscriptions...") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .height(52.dp),
+                shape = RoundedCornerShape(24.dp),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear Search")
+                        }
+                    }
+                }
+            )
+
             // Category Selector
             Row(
                 modifier = Modifier
@@ -233,25 +183,115 @@ fun DashboardScreen(
                 shape = RoundedCornerShape(32.dp),
                 colors = CardDefaults.cardColors(containerColor = DeepPurple)
             ) {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(DeepPurple, Color(0xFF7C4DFF))
+                            )
+                        )
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("$timeFrame Spend", color = Color.White.copy(alpha = 0.8f))
-                        IconButton(onClick = { timeFrame = if (timeFrame == "Monthly") "Yearly" else "Monthly" }) {
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color.White)
+                    // Decorative Blobs
+                    Canvas(modifier = Modifier.matchParentSize()) {
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.05f),
+                            radius = size.minDimension * 0.4f,
+                            center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.2f)
+                        )
+                        drawCircle(
+                            color = Color.Black.copy(alpha = 0.05f),
+                            radius = size.minDimension * 0.3f,
+                            center = androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * 0.8f)
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "$timeFrame Spend", 
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            IconButton(
+                                onClick = { timeFrame = if (timeFrame == "Monthly") "Yearly" else "Monthly" },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color.White)
+                            }
+                        }
+                        
+                        val displaySpend = if (timeFrame == "Monthly") totalSpend else totalSpend * 12
+                        Text(
+                            "${currentCurrency}${String.format("%.2f", displaySpend)}",
+                            fontSize = 44.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White
+                        )
+
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        // Beneficial Data Row
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            val trialCount = remember(allSubscriptions) { allSubscriptions.count { it.isTrial } }
+                            val activeCount = remember(allSubscriptions) { allSubscriptions.size }
+                            
+                            // Calculate Next Renewal
+                            val nextSub = remember(allSubscriptions) {
+                                val today = Calendar.getInstance().apply { 
+                                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                                }.time
+                                val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                                allSubscriptions
+                                    .filter { it.renewalDate.isNotBlank() }
+                                    .mapNotNull { try { Pair(it, format.parse(it.renewalDate)) } catch(e: Exception) { null } }
+                                    .filter { it.second != null && !it.second!!.before(today) }
+                                    .minByOrNull { it.second!!.time }
+                            }
+
+                            DashboardStatItem(
+                                icon = Icons.Default.Repeat,
+                                value = "$activeCount",
+                                label = "Active"
+                            )
+                            
+                            VerticalDivider(modifier = Modifier.height(32.dp), color = Color.White.copy(alpha = 0.2f))
+
+                            DashboardStatItem(
+                                icon = Icons.Default.Timer,
+                                value = "$trialCount",
+                                label = "Trials"
+                            )
+
+                            VerticalDivider(modifier = Modifier.height(32.dp), color = Color.White.copy(alpha = 0.2f))
+
+                            val nextRenewalText = nextSub?.let { 
+                                val outFormat = java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault())
+                                "${it.first.name} (${outFormat.format(it.second!!)})"
+                            } ?: "None"
+                            
+                            DashboardStatItem(
+                                icon = Icons.Default.Event,
+                                value = if (nextRenewalText.length > 12) nextRenewalText.take(9) + "..." else nextRenewalText,
+                                label = "Next Bill"
+                            )
                         }
                     }
-                    val displaySpend = if (timeFrame == "Monthly") totalSpend else totalSpend * 12
-                    Text(
-                        "${currentCurrency}${String.format("%.2f", displaySpend)}",
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White
-                    )
                 }
             }
 
@@ -312,6 +352,30 @@ fun DashboardScreen(
                 showDialog = false
                 editingSubscription = null
             }
+        )
+    }
+}
+
+@Composable
+private fun DashboardStatItem(icon: ImageVector, value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 4.dp)) {
+        Icon(
+            icon, 
+            contentDescription = null, 
+            tint = Color.White.copy(alpha = 0.7f), 
+            modifier = Modifier.size(16.dp)
+        )
+        Text(
+            value, 
+            fontWeight = FontWeight.Bold, 
+            color = Color.White, 
+            fontSize = 13.sp,
+            maxLines = 1
+        )
+        Text(
+            label, 
+            color = Color.White.copy(alpha = 0.6f), 
+            fontSize = 10.sp
         )
     }
 }

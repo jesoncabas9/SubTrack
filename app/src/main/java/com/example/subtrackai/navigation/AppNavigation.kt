@@ -1,22 +1,31 @@
 package com.example.subtrackai.navigation
 
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
+import com.example.subtrackai.R
 import com.example.subtrackai.ui.screens.*
+import com.example.subtrackai.ui.theme.DeepPurple
 import com.example.subtrackai.ui.theme.SubTrackTheme
 import com.example.subtrackai.util.NetworkConnectivityObserver
 import com.example.subtrackai.viewmodel.*
@@ -49,127 +58,167 @@ fun AppNavigation() {
     
     val authState by authViewModel.authState.collectAsState()
 
-    SubTrackTheme(darkTheme = isDarkMode) {
-        if (showInitialization) {
-            InitializationScreen(onInitializationComplete = { showInitialization = false })
-        } else if (status != com.example.subtrackai.util.ConnectivityObserver.Status.Available) {
-            NoConnectionScreen()
-        } else if (authState is AuthViewModel.AuthState.Loading) {
-            Box(modifier = Modifier.fillMaxSize().background(com.example.subtrackai.ui.theme.DeepPurple)) {
-                LoadingScreen(
-                    message = if (authState is AuthViewModel.AuthState.SignUpLoading) 
-                        "Signing Up...\n\nPlease check your email for a verification link." 
-                        else if (currentUser != null) "Signing out..." else "Signing in..."
-                )
-            }
-        } else {
-            NavHost(navController = navController, startDestination = if (currentUser != null) "main" else "login") {
-                composable("login") {
-                    LoginScreen(
-                        viewModel = authViewModel,
-                        onNavigateToSignUp = { navController.navigate("signup") },
-                        onLoginSuccess = { 
-                            navController.navigate("main") {
-                                popUpTo("login") { inclusive = true }
-                            }
-                        }
-                    )
-                }
-                
-                composable("signup") {
-                    SignUpScreen(
-                        viewModel = authViewModel,
-                        onNavigateToLogin = { navController.navigate("login") }
-                    )
-                }
+    // NEW: Theme Animation State
+    var animateTheme by remember { mutableStateOf(false) }
+    var targetThemeState by remember { mutableStateOf(isDarkMode) }
 
-                composable("main") {
-                    if (currentUser == null) {
-                        navController.navigate("login") {
-                            popUpTo("main") { inclusive = true }
+    LaunchedEffect(isDarkMode) {
+        if (isDarkMode != targetThemeState) {
+            animateTheme = true
+            targetThemeState = isDarkMode
+            kotlinx.coroutines.delay(1000) // Duration of animation
+            animateTheme = false
+        }
+    }
+
+    SubTrackTheme(darkTheme = targetThemeState) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (showInitialization) {
+                InitializationScreen(onInitializationComplete = { showInitialization = false })
+            } else if (status != com.example.subtrackai.util.ConnectivityObserver.Status.Available) {
+                NoConnectionScreen()
+            } else if (authState is AuthViewModel.AuthState.Loading) {
+                Box(modifier = Modifier.fillMaxSize().background(DeepPurple)) {
+                    LoadingScreen(
+                        message = if (authState is AuthViewModel.AuthState.SignUpLoading) 
+                            "Signing Up...\n\nPlease check your email for a verification link." 
+                            else if (currentUser != null) "Signing out..." else "Signing in..."
+                    )
+                }
+            } else {
+                NavHost(navController = navController, startDestination = if (currentUser != null) "main" else "login") {
+                    composable("login") {
+                        LoginScreen(
+                            viewModel = authViewModel,
+                            onNavigateToSignUp = { navController.navigate("signup") },
+                            onLoginSuccess = { 
+                                navController.navigate("main") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            }
+                        )
+                    }
+                    
+                    composable("signup") {
+                        SignUpScreen(
+                            viewModel = authViewModel,
+                            onNavigateToLogin = { navController.navigate("login") }
+                        )
+                    }
+
+                    composable("main") {
+                        if (currentUser == null) {
+                            navController.navigate("login") {
+                                popUpTo("main") { inclusive = true }
+                            }
+                        } else {
+                            MainScreen(
+                                rootNavController = navController,
+                                authViewModel = authViewModel,
+                                settingsViewModel = settingsViewModel,
+                                socialViewModel = socialViewModel,
+                                peerChatViewModel = peerChatViewModel,
+                                isDarkMode = targetThemeState,
+                                onThemeToggle = { settingsViewModel.toggleDarkMode() },
+                                onNavigateToCreatePost = { navController.navigate("create_post") },
+                                onNavigateToProfile = { navController.navigate("profile") },
+                                onNavigateToVisitorProfile = { userId -> navController.navigate("profile_view/$userId") }
+                            )
                         }
-                    } else {
-                        MainScreen(
-                            rootNavController = navController,
+                    }
+
+                    composable("create_post") {
+                        val feedViewModel: FeedViewModel = viewModel()
+                        CreatePostScreen(
+                            feedViewModel = feedViewModel,
                             authViewModel = authViewModel,
-                            settingsViewModel = settingsViewModel,
                             socialViewModel = socialViewModel,
-                            peerChatViewModel = peerChatViewModel,
-                            isDarkMode = isDarkMode,
-                            onThemeToggle = { settingsViewModel.toggleDarkMode() },
-                            onNavigateToCreatePost = { navController.navigate("create_post") },
-                            onNavigateToProfile = { navController.navigate("profile") },
-                            onNavigateToVisitorProfile = { userId -> navController.navigate("profile_view/$userId") }
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable("profile") {
+                        ProfileScreen(
+                            authViewModel = authViewModel,
+                            socialViewModel = socialViewModel,
+                            onBack = { navController.popBackStack() },
+                            onNavigateToCreatePost = { navController.navigate("create_post_profile") },
+                            onNavigateToProfile = { userId -> navController.navigate("profile_view/$userId") }
+                        )
+                    }
+
+                    composable("profile_view/{userId}") { backStackEntry ->
+                        val userId = backStackEntry.arguments?.getString("userId")
+                        ProfileScreen(
+                            authViewModel = authViewModel,
+                            socialViewModel = socialViewModel,
+                            onBack = { navController.popBackStack() },
+                            onNavigateToCreatePost = {}, // Visitors can't post to someone else's profile
+                            onNavigateToProfile = { otherId -> navController.navigate("profile_view/$otherId") },
+                            visitorUserId = userId
+                        )
+                    }
+                    
+                    composable("create_post_profile") {
+                        val feedViewModel: FeedViewModel = viewModel()
+                        CreatePostScreen(
+                            feedViewModel = feedViewModel,
+                            authViewModel = authViewModel,
+                            socialViewModel = socialViewModel,
+                            onBack = { navController.popBackStack() },
+                            profilePost = true
+                        )
+                    }
+                    
+                    composable("chat") {
+                        val dashboardViewModel: DashboardViewModel = viewModel()
+                        val chatViewModel: ChatViewModel = viewModel()
+                        val subs by dashboardViewModel.subscriptions.collectAsState()
+                        ChatScreen(
+                            viewModel = chatViewModel,
+                            subscriptions = subs,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable("analytics") {
+                        val dashboardViewModel: DashboardViewModel = viewModel()
+                        AnalyticsScreen(
+                            viewModel = dashboardViewModel,
+                            onBack = { navController.popBackStack() },
+                            isDarkMode = targetThemeState
                         )
                     }
                 }
+            }
 
-                composable("create_post") {
-                    val feedViewModel: FeedViewModel = viewModel()
-                    CreatePostScreen(
-                        feedViewModel = feedViewModel,
-                        authViewModel = authViewModel,
-                        socialViewModel = socialViewModel,
-                        onBack = { navController.popBackStack() }
-                    )
-                }
-
-                composable("profile") {
-                    ProfileScreen(
-                        authViewModel = authViewModel,
-                        socialViewModel = socialViewModel,
-                        onBack = { navController.popBackStack() },
-                        onNavigateToCreatePost = { navController.navigate("create_post_profile") },
-                        onNavigateToProfile = { userId -> navController.navigate("profile_view/$userId") }
-                    )
-                }
-
-                composable("profile_view/{userId}") { backStackEntry ->
-                    val userId = backStackEntry.arguments?.getString("userId")
-                    ProfileScreen(
-                        authViewModel = authViewModel,
-                        socialViewModel = socialViewModel,
-                        onBack = { navController.popBackStack() },
-                        onNavigateToCreatePost = {}, // Visitors can't post to someone else's profile
-                        onNavigateToProfile = { otherId -> navController.navigate("profile_view/$otherId") },
-                        visitorUserId = userId
-                    )
-                }
-                
-                composable("create_post_profile") {
-                    val feedViewModel: FeedViewModel = viewModel()
-                    CreatePostScreen(
-                        feedViewModel = feedViewModel,
-                        authViewModel = authViewModel,
-                        socialViewModel = socialViewModel,
-                        onBack = { navController.popBackStack() },
-                        profilePost = true
-                    )
-                }
-                
-                composable("chat") {
-                    val dashboardViewModel: DashboardViewModel = viewModel()
-                    val chatViewModel: ChatViewModel = viewModel()
-                    val subs by dashboardViewModel.subscriptions.collectAsState()
-                    ChatScreen(
-                        viewModel = chatViewModel,
-                        subscriptions = subs,
-                        onBack = { navController.popBackStack() }
-                    )
-                }
-
-                composable("analytics") {
-                    val dashboardViewModel: DashboardViewModel = viewModel()
-                    AnalyticsScreen(
-                        viewModel = dashboardViewModel,
-                        onBack = { navController.popBackStack() }
-                    )
-                }
+            // Theme Rise Animation Overlay
+            AnimatedVisibility(
+                visible = animateTheme,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(800, easing = LinearOutSlowInEasing)
+                ),
+                exit = fadeOut(animationSpec = tween(200))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = if (targetThemeState) 
+                                    listOf(Color.Transparent, Color(0xFF121212).copy(alpha = 0.5f), Color(0xFF121212)) 
+                                    else 
+                                    listOf(Color.Transparent, Color.White.copy(alpha = 0.5f), Color.White)
+                            )
+                        )
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     rootNavController: androidx.navigation.NavHostController,
@@ -186,6 +235,7 @@ fun MainScreen(
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val userProfile by socialViewModel.userProfile.collectAsState()
 
     val items = listOf(
         BottomNavItem.Dashboard,
@@ -196,6 +246,65 @@ fun MainScreen(
     )
 
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    val titleText = when (currentDestination?.route) {
+                        BottomNavItem.Dashboard.route -> "SubTrack"
+                        BottomNavItem.Feed.route -> "Feed"
+                        BottomNavItem.Chat.route -> "Messages"
+                        BottomNavItem.Notifications.route -> "Notifications"
+                        BottomNavItem.Settings.route -> "Settings"
+                        else -> "SubTrack"
+                    }
+                    Text(
+                        titleText,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                navigationIcon = {
+                    if (currentDestination?.route == BottomNavItem.Dashboard.route) {
+                        Row(modifier = Modifier.padding(start = 16.dp)) {
+                            androidx.compose.foundation.Image(
+                                painter = painterResource(id = R.drawable.subtrack_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    if (currentDestination?.route == BottomNavItem.Dashboard.route) {
+                        IconButton(onClick = { rootNavController.navigate("analytics") }) {
+                            Icon(Icons.Default.BarChart, contentDescription = "Analytics")
+                        }
+                    }
+
+                    if (currentDestination?.route == BottomNavItem.Dashboard.route || currentDestination?.route == BottomNavItem.Feed.route) {
+                        IconButton(onClick = onNavigateToProfile) {
+                            Surface(
+                                modifier = Modifier.size(32.dp),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        com.example.subtrackai.util.ProfileIcons.getIcon(userProfile?.profileIcon),
+                                        contentDescription = "Profile",
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
         bottomBar = {
             NavigationBar {
                 items.forEach { item ->
@@ -235,13 +344,15 @@ fun MainScreen(
                     viewModel = feedViewModel,
                     onNavigateToCreatePost = onNavigateToCreatePost,
                     onNavigateToProfile = onNavigateToVisitorProfile,
-                    onNavigateToMyProfile = onNavigateToProfile
+                    onNavigateToMyProfile = onNavigateToProfile,
+                    isDarkMode = isDarkMode
                 )
             }
             composable(BottomNavItem.Chat.route) {
                 PeerChatScreen(
                     socialViewModel = socialViewModel,
-                    chatViewModel = peerChatViewModel
+                    chatViewModel = peerChatViewModel,
+                    isDarkMode = isDarkMode
                 )
             }
             composable(BottomNavItem.Notifications.route) {

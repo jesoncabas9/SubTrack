@@ -38,16 +38,9 @@ fun SettingsScreen(
     val userProfile by socialViewModel.userProfile.collectAsState()
 
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
-                windowInsets = WindowInsets(0.dp)
-            )
-        }
     ) { padding ->
         Column(
             modifier = Modifier
-                .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),

@@ -48,11 +48,20 @@ class DashboardViewModel : ViewModel() {
         firestore.collection("users")
             .document(uid)
             .collection("subscriptions")
+            .get(com.google.firebase.firestore.Source.CACHE) // Try cache first for speed
+            .addOnSuccessListener { snapshot ->
+                val subs = snapshot?.toObjects(Subscription::class.java) ?: emptyList()
+                _subscriptions.value = subs
+                calculateTotalMonthlySpend(subs)
+                calculateInsights(subs)
+            }
+            
+        // Still keep a listener but with lower frequency or just for updates
+        firestore.collection("users")
+            .document(uid)
+            .collection("subscriptions")
             .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    // Handle error
-                    return@addSnapshotListener
-                }
+                if (error != null) return@addSnapshotListener
                 val subs = snapshot?.toObjects(Subscription::class.java) ?: emptyList()
                 _subscriptions.value = subs
                 calculateTotalMonthlySpend(subs)

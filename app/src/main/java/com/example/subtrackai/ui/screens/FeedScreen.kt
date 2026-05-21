@@ -31,9 +31,10 @@ fun FeedScreen(
     socialViewModel: com.example.subtrackai.viewmodel.SocialViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onNavigateToCreatePost: () -> Unit,
     onNavigateToProfile: (String) -> Unit,
-    onNavigateToMyProfile: () -> Unit
+    onNavigateToMyProfile: () -> Unit,
+    isDarkMode: Boolean
 ) {
-    val posts by viewModel.posts.collectAsState()
+    val posts by viewModel.feedPosts.collectAsState()
     val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
     val currentUserId = auth.currentUser?.uid
     
@@ -43,32 +44,8 @@ fun FeedScreen(
     var sharePost by remember { mutableStateOf<Post?>(null) }
 
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Feed", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = onNavigateToMyProfile) {
-                        Surface(
-                            modifier = Modifier.size(32.dp),
-                            shape = CircleShape,
-                            color = DeepPurple.copy(alpha = 0.1f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    com.example.subtrackai.util.ProfileIcons.getIcon(userProfile?.profileIcon),
-                                    contentDescription = "My Profile",
-                                    modifier = Modifier.size(20.dp),
-                                    tint = DeepPurple
-                                )
-                            }
-                        }
-                    }
-                },
-                windowInsets = WindowInsets(0.dp)
-            )
-        }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // Post Creation Trigger (Like FB Lite entry)
             Card(
                 modifier = Modifier
@@ -108,7 +85,7 @@ fun FeedScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(posts.filter { !it.profilePost }) { post ->
+                items(posts) { post ->
                     PostItem(
                         post = post, 
                         onLikeToggle = { viewModel.toggleLike(post.id) },
@@ -327,7 +304,8 @@ fun PostItem(
     onEdit: (String) -> Unit,
     onCommentClick: () -> Unit,
     onShare: () -> Unit,
-    onToggleComments: () -> Unit
+    onToggleComments: () -> Unit,
+    showFeedTag: Boolean = false
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var isEditing by remember { mutableStateOf(false) }
@@ -340,19 +318,40 @@ fun PostItem(
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            if (post.shared) {
-                Surface(
-                    color = DeepPurple.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.padding(bottom = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (post.shared) {
+                    Surface(
+                        color = DeepPurple.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.padding(bottom = 8.dp)
                     ) {
-                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(12.dp), tint = DeepPurple)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Shared a post", fontSize = 10.sp, color = DeepPurple, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(12.dp), tint = DeepPurple)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Shared a post", fontSize = 10.sp, color = DeepPurple, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else if (showFeedTag && !post.profilePost) {
+                    Surface(
+                        color = Color.Gray.copy(alpha = 0.1f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.RssFeed, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Gray)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Posted on Feed", fontSize = 10.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

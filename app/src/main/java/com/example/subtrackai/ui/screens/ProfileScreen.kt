@@ -39,14 +39,17 @@ fun ProfileScreen(
 ) {
     val currentUserProfile by socialViewModel.userProfile.collectAsState()
     var visitorProfile by remember { mutableStateOf<UserProfile?>(null) }
+    val myFriends by socialViewModel.friends.collectAsState()
+    val visitorFriends by socialViewModel.visitorFriends.collectAsState()
     
     val isOwner = visitorUserId == null || visitorUserId == currentUserProfile?.uid
     val profile = if (isOwner) currentUserProfile else visitorProfile
+    val friends = if (isOwner) myFriends else visitorFriends
     
     val feedViewModel: com.example.subtrackai.viewmodel.FeedViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val allPosts by feedViewModel.posts.collectAsState()
     val profilePosts = allPosts.filter { 
-        it.userId == (visitorUserId ?: currentUserProfile?.uid) && it.profilePost 
+        it.userId == (visitorUserId ?: currentUserProfile?.uid)
     }
 
     var commentPostId by remember { mutableStateOf<String?>(null) }
@@ -137,7 +140,7 @@ fun ProfileScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        ProfileStat("Friends", "${profile?.friendsCount ?: 0}")
+                        ProfileStat("Friends", "${friends.size}")
                         ProfileStat("Posts", "${profilePosts.size}")
                     }
 
@@ -229,7 +232,8 @@ fun ProfileScreen(
                         onEdit = { newContent -> feedViewModel.editPost(post.id, newContent) },
                         onCommentClick = { commentPostId = post.id },
                         onShare = { socialViewModel.sharePostToProfile(post) },
-                        onToggleComments = { feedViewModel.editPost(post.id, if (post.commentsEnabled) "OFF" else "ON") }
+                        onToggleComments = { feedViewModel.editPost(post.id, if (post.commentsEnabled) "OFF" else "ON") },
+                        showFeedTag = true
                     )
                 }
             }

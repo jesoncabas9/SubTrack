@@ -26,27 +26,16 @@ import com.example.subtrackai.viewmodel.DashboardViewModel
 @Composable
 fun AnalyticsScreen(
     viewModel: DashboardViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    isDarkMode: Boolean
 ) {
     val subscriptions by viewModel.subscriptions.collectAsState()
     val totalSpend by viewModel.totalMonthlySpend.collectAsState()
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Spending Analytics") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                windowInsets = WindowInsets(0.dp)
-            )
-        }
     ) { padding ->
         Column(
             modifier = Modifier
-                .padding(padding)
                 .fillMaxSize()
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally

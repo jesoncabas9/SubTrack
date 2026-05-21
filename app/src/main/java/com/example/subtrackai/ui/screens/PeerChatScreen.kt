@@ -29,7 +29,8 @@ import com.example.subtrackai.viewmodel.SocialViewModel
 @Composable
 fun PeerChatScreen(
     socialViewModel: SocialViewModel,
-    chatViewModel: PeerChatViewModel
+    chatViewModel: PeerChatViewModel,
+    isDarkMode: Boolean
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
@@ -39,21 +40,8 @@ fun PeerChatScreen(
     val friends by socialViewModel.friends.collectAsState()
 
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text(selectedUser?.username ?: "Messages", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    if (selectedUser != null) {
-                        IconButton(onClick = { selectedUser = null }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                },
-                windowInsets = WindowInsets(0.dp)
-            )
-        }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
             if (selectedUser == null) {
                 // User Search / Friend List
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -95,10 +83,30 @@ fun PeerChatScreen(
             } else {
                 // Active Chat
                 Column(modifier = Modifier.fillMaxSize()) {
+                    Surface(
+                        color = Color(0xFFFFF3E0),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Be careful of sharing personal information and scammers.",
+                                fontSize = 11.sp,
+                                color = Color(0xFFE65100),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    
                     LazyColumn(
                         modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                         reverseLayout = false,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
                         items(messages) { message ->
                             ChatBubble(message = message, isMe = message.senderId != selectedUser?.uid)

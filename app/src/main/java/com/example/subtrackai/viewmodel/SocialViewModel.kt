@@ -25,6 +25,9 @@ class SocialViewModel : ViewModel() {
     private val _friendRequests = MutableStateFlow<List<FriendRequest>>(emptyList())
     val friendRequests = _friendRequests.asStateFlow()
 
+    private val _visitorFriends = MutableStateFlow<List<UserProfile>>(emptyList())
+    val visitorFriends = _visitorFriends.asStateFlow()
+
     init {
         auth.addAuthStateListener { firebaseAuth ->
             val uid = firebaseAuth.currentUser?.uid
@@ -75,6 +78,27 @@ class SocialViewModel : ViewModel() {
         firestore.collection("users").document(uid).get().addOnSuccessListener {
             onResult(it.toObject(UserProfile::class.java))
         }
+        observeVisitorFriends(uid)
+    }
+
+    private fun observeVisitorFriends(uid: String) {
+        firestore.collection("friendRequests")
+            .whereIn("status", listOf("accepted"))
+            .addSnapshotListener { snapshot, _ ->
+                val requests = snapshot?.toObjects(FriendRequest::class.java) ?: emptyList()
+                val friendIds = requests.map { if (it.fromId == uid) it.toId else it.fromId }.filter { it != uid }
+                
+                if (friendIds.isNotEmpty()) {
+                    firestore.collection("users")
+                        .whereIn("uid", friendIds)
+                        .get()
+                        .addOnSuccessListener { userSnapshot ->
+                            _visitorFriends.value = userSnapshot?.toObjects(UserProfile::class.java) ?: emptyList()
+                        }
+                } else {
+                    _visitorFriends.value = emptyList()
+                }
+            }
     }
 
     private fun observeFriendRequests(uid: String) {
