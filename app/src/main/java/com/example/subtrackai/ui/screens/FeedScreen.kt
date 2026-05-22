@@ -44,13 +44,14 @@ fun FeedScreen(
     var sharePost by remember { mutableStateOf<Post?>(null) }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize()) {
             // Post Creation Trigger (Like FB Lite entry)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                    .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 16.dp)
                     .clickable { onNavigateToCreatePost() },
                 shape = RoundedCornerShape(16.dp),
                 elevation = CardDefaults.cardElevation(2.dp),

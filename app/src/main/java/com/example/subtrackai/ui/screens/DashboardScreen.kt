@@ -60,6 +60,7 @@ fun DashboardScreen(
     var editingSubscription by remember { mutableStateOf<Subscription?>(null) }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         floatingActionButton = {
             Column(horizontalAlignment = Alignment.End) {
                 FloatingActionButton(
@@ -82,256 +83,260 @@ fun DashboardScreen(
             }
         }
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
         ) {
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onSearchQueryChange(it) },
-                placeholder = { Text("Search subscriptions...") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .height(52.dp),
-                shape = RoundedCornerShape(24.dp),
-                singleLine = true,
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear Search")
-                        }
-                    }
-                }
-            )
-
-            // Category Selector
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 0.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    categories.forEach { cat ->
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = { viewModel.onCategoryChange(cat) },
-                            label = { Text(cat) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = DeepPurple.copy(alpha = 0.1f),
-                                selectedLabelColor = DeepPurple
-                            )
-                        )
-                    }
-                }
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = Color.LightGray,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Smart Insights Card
-            if (showInsights) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = DeepPurple.copy(alpha = 0.05f))
-                ) {
-                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = CircleShape,
-                            color = DeepPurple.copy(alpha = 0.1f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Info, contentDescription = null, tint = DeepPurple)
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text("Smart Insights", fontWeight = FontWeight.Bold, color = DeepPurple)
-                            Text(
-                                if (potentialSavings > 0) "You could save up to ${currentCurrency}${String.format("%.2f", potentialSavings)} / year by switching some monthly plans to annual billing."
-                                else "Your subscriptions look optimized!",
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Spend Overview
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(32.dp),
-                colors = CardDefaults.cardColors(containerColor = DeepPurple)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            brush = Brush.verticalGradient(
-                                colors = listOf(DeepPurple, Color(0xFF7C4DFF))
-                            )
-                        )
-                ) {
-                    // Decorative Blobs
-                    Canvas(modifier = Modifier.matchParentSize()) {
-                        drawCircle(
-                            color = Color.White.copy(alpha = 0.05f),
-                            radius = size.minDimension * 0.4f,
-                            center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.2f)
-                        )
-                        drawCircle(
-                            color = Color.Black.copy(alpha = 0.05f),
-                            radius = size.minDimension * 0.3f,
-                            center = androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * 0.8f)
-                        )
-                    }
-
-                    Column(
+            item {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Search Bar
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { viewModel.onSearchQueryChange(it) },
+                        placeholder = { Text("Search subscriptions...") },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 24.dp, horizontal = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 16.dp)
+                            .height(52.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear Search")
+                                }
+                            }
+                        }
+                    )
+
+                    // Category Selector
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 0.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(
-                                "$timeFrame Spend", 
-                                color = Color.White.copy(alpha = 0.8f),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            IconButton(
-                                onClick = { timeFrame = if (timeFrame == "Monthly") "Yearly" else "Monthly" },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color.White)
+                            categories.forEach { cat ->
+                                FilterChip(
+                                    selected = selectedCategory == cat,
+                                    onClick = { viewModel.onCategoryChange(cat) },
+                                    label = { Text(cat) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = DeepPurple.copy(alpha = 0.1f),
+                                        selectedLabelColor = DeepPurple
+                                    )
+                                )
                             }
                         }
-                        
-                        val displaySpend = if (timeFrame == "Monthly") totalSpend else totalSpend * 12
-                        Text(
-                            "${currentCurrency}${String.format("%.2f", displaySpend)}",
-                            fontSize = 44.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = Color.LightGray,
+                            modifier = Modifier.size(20.dp)
                         )
+                    }
 
-                        Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                        // Beneficial Data Row
-                        Row(
+                    // Smart Insights Card
+                    if (showInsights) {
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(horizontal = 16.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = DeepPurple.copy(alpha = 0.05f))
                         ) {
-                            val trialCount = remember(allSubscriptions) { allSubscriptions.count { it.isTrial } }
-                            val activeCount = remember(allSubscriptions) { allSubscriptions.size }
-                            
-                            // Calculate Next Renewal
-                            val nextSub = remember(allSubscriptions) {
-                                val today = Calendar.getInstance().apply { 
-                                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-                                }.time
-                                val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-                                allSubscriptions
-                                    .filter { it.renewalDate.isNotBlank() }
-                                    .mapNotNull { try { Pair(it, format.parse(it.renewalDate)) } catch(e: Exception) { null } }
-                                    .filter { it.second != null && !it.second!!.before(today) }
-                                    .minByOrNull { it.second!!.time }
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    modifier = Modifier.size(40.dp),
+                                    shape = CircleShape,
+                                    color = DeepPurple.copy(alpha = 0.1f)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Info, contentDescription = null, tint = DeepPurple)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text("Smart Insights", fontWeight = FontWeight.Bold, color = DeepPurple)
+                                    Text(
+                                        if (potentialSavings > 0) "You could save up to ${currentCurrency}${String.format("%.2f", potentialSavings)} / year by switching some monthly plans to annual billing."
+                                        else "Your subscriptions look optimized!",
+                                        fontSize = 14.sp
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    // Spend Overview
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        shape = RoundedCornerShape(32.dp),
+                        colors = CardDefaults.cardColors(containerColor = DeepPurple)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(DeepPurple, Color(0xFF7C4DFF))
+                                    )
+                                )
+                        ) {
+                            // Decorative Blobs
+                            Canvas(modifier = Modifier.matchParentSize()) {
+                                drawCircle(
+                                    color = Color.White.copy(alpha = 0.05f),
+                                    radius = size.minDimension * 0.4f,
+                                    center = androidx.compose.ui.geometry.Offset(size.width * 0.9f, size.height * 0.2f)
+                                )
+                                drawCircle(
+                                    color = Color.Black.copy(alpha = 0.05f),
+                                    radius = size.minDimension * 0.3f,
+                                    center = androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * 0.8f)
+                                )
                             }
 
-                            DashboardStatItem(
-                                icon = Icons.Default.Repeat,
-                                value = "$activeCount",
-                                label = "Active"
-                            )
-                            
-                            VerticalDivider(modifier = Modifier.height(32.dp), color = Color.White.copy(alpha = 0.2f))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp, horizontal = 16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "$timeFrame Spend", 
+                                        color = Color.White.copy(alpha = 0.8f),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    IconButton(
+                                        onClick = { timeFrame = if (timeFrame == "Monthly") "Yearly" else "Monthly" },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Default.ArrowDropDown, contentDescription = null, tint = Color.White)
+                                    }
+                                }
+                                
+                                val displaySpend = if (timeFrame == "Monthly") totalSpend else totalSpend * 12
+                                Text(
+                                    "${currentCurrency}${String.format("%.2f", displaySpend)}",
+                                    fontSize = 44.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White
+                                )
 
-                            DashboardStatItem(
-                                icon = Icons.Default.Timer,
-                                value = "$trialCount",
-                                label = "Trials"
-                            )
+                                Spacer(modifier = Modifier.height(24.dp))
 
-                            VerticalDivider(modifier = Modifier.height(32.dp), color = Color.White.copy(alpha = 0.2f))
+                                // Beneficial Data Row
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val trialCount = remember(allSubscriptions) { allSubscriptions.count { it.isTrial } }
+                                    val activeCount = remember(allSubscriptions) { allSubscriptions.size }
+                                    
+                                    // Calculate Next Renewal
+                                    val nextSub = remember(allSubscriptions) {
+                                        val today = Calendar.getInstance().apply { 
+                                            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                                        }.time
+                                        val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                                        allSubscriptions
+                                            .filter { it.renewalDate.isNotBlank() }
+                                            .mapNotNull { try { Pair(it, format.parse(it.renewalDate)) } catch(e: Exception) { null } }
+                                            .filter { it.second != null && !it.second!!.before(today) }
+                                            .minByOrNull { it.second!!.time }
+                                    }
 
-                            val nextRenewalText = nextSub?.let { 
-                                val outFormat = java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault())
-                                "${it.first.name} (${outFormat.format(it.second!!)})"
-                            } ?: "None"
-                            
-                            DashboardStatItem(
-                                icon = Icons.Default.Event,
-                                value = if (nextRenewalText.length > 12) nextRenewalText.take(9) + "..." else nextRenewalText,
-                                label = "Next Bill"
-                            )
+                                    DashboardStatItem(
+                                        icon = Icons.Default.Repeat,
+                                        value = "$activeCount",
+                                        label = "Active"
+                                    )
+                                    
+                                    VerticalDivider(modifier = Modifier.height(32.dp), color = Color.White.copy(alpha = 0.2f))
+
+                                    DashboardStatItem(
+                                        icon = Icons.Default.Timer,
+                                        value = "$trialCount",
+                                        label = "Trials"
+                                    )
+
+                                    VerticalDivider(modifier = Modifier.height(32.dp), color = Color.White.copy(alpha = 0.2f))
+
+                                    val nextRenewalText = nextSub?.let { 
+                                        val outFormat = java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault())
+                                        "${it.first.name} (${outFormat.format(it.second!!)})"
+                                    } ?: "None"
+                                    
+                                    DashboardStatItem(
+                                        icon = Icons.Default.Event,
+                                        value = if (nextRenewalText.length > 12) nextRenewalText.take(9) + "..." else nextRenewalText,
+                                        label = "Next Bill"
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Subscriptions List Title
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        Text("Your Subscriptions", fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                        Text("${subscriptions.size} Total", color = Color.Gray, fontSize = 14.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (subscriptions.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text("No subscriptions found.", color = Color.Gray)
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Subscriptions List
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Text("Your Subscriptions", fontWeight = FontWeight.Bold, fontSize = 22.sp)
-                Text("${subscriptions.size} Total", color = Color.Gray, fontSize = 14.sp)
+            items(subscriptions) { sub ->
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    SubscriptionItem(
+                        subscription = sub,
+                        currency = currentCurrency,
+                        onClick = {
+                            editingSubscription = sub
+                            showDialog = true
+                        }
+                    )
+                }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (subscriptions.isEmpty()) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text("No subscriptions found.", color = Color.Gray)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(subscriptions) { sub ->
-                        SubscriptionItem(
-                            subscription = sub,
-                            currency = currentCurrency,
-                            onClick = {
-                                editingSubscription = sub
-                                showDialog = true
-                            }
-                        )
-                    }
-                }
+            
+            item {
+                Spacer(modifier = Modifier.height(100.dp))
             }
         }
     }

@@ -42,6 +42,7 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                modifier = Modifier.statusBarsPadding(),
                 title = { Text("SubTrack Assistant") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {

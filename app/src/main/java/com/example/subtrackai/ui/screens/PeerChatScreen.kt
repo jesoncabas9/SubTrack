@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -39,12 +40,22 @@ fun PeerChatScreen(
     val messages by chatViewModel.messages.collectAsState()
     val friends by socialViewModel.friends.collectAsState()
 
+    val listState = rememberLazyListState()
+    var showWarning by remember { mutableStateOf(true) }
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp)
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize()) {
             if (selectedUser == null) {
                 // User Search / Friend List
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 16.dp)) {
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { 
@@ -83,26 +94,33 @@ fun PeerChatScreen(
             } else {
                 // Active Chat
                 Column(modifier = Modifier.fillMaxSize()) {
-                    Surface(
-                        color = Color(0xFFFFF3E0),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    if (showWarning) {
+                        Surface(
+                            color = Color(0xFFFFF3E0),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "Be careful of sharing personal information and scammers.",
-                                fontSize = 11.sp,
-                                color = Color(0xFFE65100),
-                                fontWeight = FontWeight.Medium
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFE65100), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    "Be careful of sharing personal information and scammers.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFE65100),
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { showWarning = false }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Color(0xFFE65100), modifier = Modifier.size(14.dp))
+                                }
+                            }
                         }
                     }
                     
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
                         reverseLayout = false,
                         verticalArrangement = Arrangement.spacedBy(8.dp),

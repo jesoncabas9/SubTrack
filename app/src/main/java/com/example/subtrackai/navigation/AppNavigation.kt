@@ -65,8 +65,11 @@ fun AppNavigation() {
     LaunchedEffect(isDarkMode) {
         if (isDarkMode != targetThemeState) {
             animateTheme = true
-            targetThemeState = isDarkMode
-            kotlinx.coroutines.delay(1000) // Duration of animation
+            // Wait for rise to cover screen
+            kotlinx.coroutines.delay(800) 
+            targetThemeState = isDarkMode 
+            // Briefly hold then hide
+            kotlinx.coroutines.delay(200)
             animateTheme = false
         }
     }
@@ -192,24 +195,24 @@ fun AppNavigation() {
                 }
             }
 
-            // Theme Rise Animation Overlay
+            // Theme Fall Animation Overlay (Top to Bottom)
             AnimatedVisibility(
                 visible = animateTheme,
                 enter = slideInVertically(
-                    initialOffsetY = { it },
+                    initialOffsetY = { -it }, // Start above screen
                     animationSpec = tween(800, easing = LinearOutSlowInEasing)
                 ),
-                exit = fadeOut(animationSpec = tween(200))
+                exit = fadeOut(animationSpec = tween(300))
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             brush = Brush.verticalGradient(
-                                colors = if (targetThemeState) 
-                                    listOf(Color.Transparent, Color(0xFF121212).copy(alpha = 0.5f), Color(0xFF121212)) 
+                                colors = if (isDarkMode) 
+                                    listOf(Color(0xFF121212), Color(0xFF121212).copy(alpha = 0.8f), Color.Transparent) 
                                     else 
-                                    listOf(Color.Transparent, Color.White.copy(alpha = 0.5f), Color.White)
+                                    listOf(Color.White, Color.White.copy(alpha = 0.8f), Color.Transparent)
                             )
                         )
                 )
@@ -236,6 +239,15 @@ fun MainScreen(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
     val userProfile by socialViewModel.userProfile.collectAsState()
+    val context = LocalContext.current
+
+    // Security: Handle back button to prevent "White Screen" bug
+    androidx.activity.compose.BackHandler(enabled = true) {
+        if (!navController.popBackStack()) {
+            // If internal nav can't go back, exit the app instead of popping root
+            (context as? android.app.Activity)?.finish()
+        }
+    }
 
     val items = listOf(
         BottomNavItem.Dashboard,
@@ -248,6 +260,7 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                modifier = Modifier.statusBarsPadding(),
                 title = {
                     val titleText = when (currentDestination?.route) {
                         BottomNavItem.Dashboard.route -> "SubTrack"
@@ -260,7 +273,9 @@ fun MainScreen(
                     Text(
                         titleText,
                         fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = if (currentDestination?.route == BottomNavItem.Dashboard.route) 
+                            Modifier.padding(start = 32.dp) else Modifier
                     )
                 },
                 navigationIcon = {

@@ -32,6 +32,7 @@ fun NotificationScreen(
     var selectedTab by remember { mutableStateOf(0) } // 0: System, 1: Social
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         topBar = {
             TabRow(selectedTabIndex = selectedTab) {
                 Tab(
