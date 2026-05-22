@@ -22,7 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.subtrackai.R
 import com.example.subtrackai.model.Subscription
-import com.example.subtrackai.ui.components.AddSubscriptionDialog
+import com.example.subtrackai.ui.components.AddSubscriptionSheet
+import com.example.subtrackai.ui.components.SubscriptionDetailsSheet
 import com.example.subtrackai.ui.theme.DeepBlue
 import com.example.subtrackai.ui.theme.DeepPurple
 import com.example.subtrackai.viewmodel.DashboardViewModel
@@ -57,7 +58,11 @@ fun DashboardScreen(
     val categories = listOf("All", "Streaming", "Gaming", "Music", "Tools", "Finance", "Other")
 
     var showDialog by remember { mutableStateOf(false) }
+    var showDetailsSheet by remember { mutableStateOf(false) }
+    var selectedSubscription by remember { mutableStateOf<Subscription?>(null) }
     var editingSubscription by remember { mutableStateOf<Subscription?>(null) }
+    
+    val sheetState = rememberModalBottomSheetState()
 
     Scaffold(
         contentWindowInsets = WindowInsets(0.dp),
@@ -328,8 +333,8 @@ fun DashboardScreen(
                         subscription = sub,
                         currency = currentCurrency,
                         onClick = {
-                            editingSubscription = sub
-                            showDialog = true
+                            selectedSubscription = sub
+                            showDetailsSheet = true
                         }
                     )
                 }
@@ -341,23 +346,65 @@ fun DashboardScreen(
         }
     }
 
+    if (showDetailsSheet && selectedSubscription != null) {
+        ModalBottomSheet(
+            onDismissRequest = { 
+                showDetailsSheet = false
+                selectedSubscription = null
+            },
+            sheetState = sheetState
+        ) {
+            SubscriptionDetailsSheet(
+                subscription = selectedSubscription!!,
+                currency = currentCurrency,
+                onDismiss = { showDetailsSheet = false },
+                onEdit = {
+                    editingSubscription = selectedSubscription
+                    showDetailsSheet = false
+                    showDialog = true
+                },
+                onDelete = {
+                    viewModel.deleteSubscription(selectedSubscription!!.id)
+                    showDetailsSheet = false
+                    selectedSubscription = null
+                }
+            )
+        }
+    }
+
     if (showDialog) {
-        AddSubscriptionDialog(
-            onDismiss = { 
+        ModalBottomSheet(
+            onDismissRequest = { 
                 showDialog = false
                 editingSubscription = null
             },
-            onConfirm = { name, price, cycle, date, cat, isTrial ->
-                if (editingSubscription != null) {
-                    // Update logic would go here, for now just add as new or mock
-                    viewModel.addSubscription(name, price, cycle, date, cat, isTrial)
-                } else {
-                    viewModel.addSubscription(name, price, cycle, date, cat, isTrial)
+            sheetState = sheetState
+        ) {
+            AddSubscriptionSheet(
+                initialName = editingSubscription?.name ?: "",
+                initialPrice = editingSubscription?.price?.toString() ?: "",
+                initialCategory = editingSubscription?.category ?: "Streaming",
+                initialCycle = editingSubscription?.billingCycle ?: "Monthly",
+                initialDate = editingSubscription?.renewalDate ?: "",
+                initialIsTrial = editingSubscription?.isTrial ?: false,
+                onDismiss = { 
+                    showDialog = false
+                    editingSubscription = null
+                },
+                onConfirm = { name: String, price: Double, cycle: String, date: String, cat: String, isTrial: Boolean ->
+                    if (editingSubscription != null) {
+                        viewModel.updateSubscription(
+                            editingSubscription!!.id,
+                            name, price, cycle, date, cat, isTrial
+                        )
+                    } else {
+                        viewModel.addSubscription(name, price, cycle, date, cat, isTrial)
+                    }
+                    showDialog = false
+                    editingSubscription = null
                 }
-                showDialog = false
-                editingSubscription = null
-            }
-        )
+            )
+        }
     }
 }
 

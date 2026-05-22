@@ -17,5 +17,12 @@ val DeepBlue = Color(0xFF3700B3)
 val SkyBlue = Color(0xFF03DAC6)
 val GradientStart = Color(0xFF7C4DFF)
 val GradientEnd = Color(0xFF448AFF)
-val SurfaceDark = Color(0xFF121212)
-val OnSurfaceDark = Color(0xFFE1E1E1)
+
+// Dark Mode Refinement
+val SurfaceDark = Color(0xFF0F0F12) // Slightly deeper, cooler dark
+val OnSurfaceDark = Color(0xFFF0F0F5)
+val SurfaceVariantDark = Color(0xFF1E1E24) // Higher contrast for cards
+
+// Light Mode Refinement
+val SurfaceLight = Color(0xFFF8F9FF) // Soft blueish white
+val SurfaceVariantLight = Color(0xFFFFFFFF)

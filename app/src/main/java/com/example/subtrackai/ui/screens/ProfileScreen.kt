@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.subtrackai.model.UserProfile
 import com.example.subtrackai.ui.components.EditProfileDialog
-import com.example.subtrackai.ui.screens.CommentSheet
 import com.example.subtrackai.ui.theme.DeepPurple
 import com.example.subtrackai.util.ProfileIcons
 import com.example.subtrackai.viewmodel.AuthViewModel
@@ -52,7 +51,13 @@ fun ProfileScreen(
         it.userId == (visitorUserId ?: currentUserProfile?.uid)
     }
 
-    var commentPostId by remember { mutableStateOf<String?>(null) }
+    val sheetState = rememberModalBottomSheetState()
+    var showCommentSheet by remember { mutableStateOf(false) }
+    var selectedPostId by remember { mutableStateOf<String?>(null) }
+    
+    var showShareSheet by remember { mutableStateOf(false) }
+    var selectedSharePost by remember { mutableStateOf<com.example.subtrackai.model.Post?>(null) }
+    
     var showEditDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(visitorUserId) {
@@ -157,20 +162,46 @@ fun ProfileScreen(
                             Text("Edit Profile")
                         }
                     } else {
-                        var requestSent by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = { 
-                                profile?.let { 
-                                    socialViewModel.sendFriendRequest(it)
-                                    requestSent = true
-                                } 
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !requestSent,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = if (requestSent) Color.Gray else DeepPurple)
-                        ) {
-                            Text(if (requestSent) "Request Sent" else "Add Friend")
+                        val friendRequests by socialViewModel.friendRequests.collectAsState()
+                        // Use deterministic ID logic for local check
+                        val currentUid = currentUserProfile?.uid ?: ""
+                        val targetUid = profile?.uid ?: ""
+                        val requestId = if (currentUid < targetUid) "${currentUid}_${targetUid}" else "${targetUid}_${currentUid}"
+                        
+                        val request = friendRequests.find { it.id == requestId || (it.fromId == currentUid && it.toId == targetUid) }
+                        val isFriend = myFriends.any { it.uid == targetUid }
+
+                        if (isFriend) {
+                            Button(
+                                onClick = { /* Message flow maybe? */ },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+                            ) {
+                                Text("Friends")
+                            }
+                        } else if (request != null && request.status == "pending") {
+                            Button(
+                                onClick = { socialViewModel.cancelFriendRequest(profile?.uid ?: "") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)
+                            ) {
+                                Text("Cancel Request")
+                            }
+                        } else {
+                            Button(
+                                onClick = { 
+                                    profile?.let { 
+                                        socialViewModel.sendFriendRequest(it)
+                                    } 
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+                            ) {
+                                Text("Add Friend")
+                            }
                         }
                     }
                 }
@@ -231,8 +262,14 @@ fun ProfileScreen(
                         isOwner = post.userId == currentUserId,
                         onDelete = { feedViewModel.deletePost(post.id) },
                         onEdit = { newContent -> feedViewModel.editPost(post.id, newContent) },
-                        onCommentClick = { commentPostId = post.id },
-                        onShare = { socialViewModel.sharePostToProfile(post) },
+                        onCommentClick = { 
+                            selectedPostId = post.id
+                            showCommentSheet = true
+                        },
+                        onShare = { 
+                            selectedSharePost = post
+                            showShareSheet = true
+                        },
                         onToggleComments = { feedViewModel.editPost(post.id, if (post.commentsEnabled) "OFF" else "ON") },
                         showFeedTag = true
                     )
@@ -240,14 +277,47 @@ fun ProfileScreen(
             }
         }
 
-        if (commentPostId != null) {
-            CommentSheet(
-                postId = commentPostId!!,
-                currentUserId = currentUserProfile?.uid ?: "",
-                viewModel = feedViewModel,
-                socialViewModel = socialViewModel,
-                onDismiss = { commentPostId = null }
-            )
+        if (showCommentSheet && selectedPostId != null) {
+            ModalBottomSheet(
+                onDismissRequest = { 
+                    showCommentSheet = false
+                    selectedPostId = null
+                },
+                sheetState = sheetState,
+                dragHandle = { BottomSheetDefaults.DragHandle() },
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                CommentSheetContent(
+                    postId = selectedPostId!!,
+                    currentUserId = currentUserProfile?.uid ?: "",
+                    viewModel = feedViewModel,
+                    socialViewModel = socialViewModel,
+                    onDismiss = { 
+                        showCommentSheet = false
+                        selectedPostId = null
+                    }
+                )
+            }
+        }
+
+        if (showShareSheet && selectedSharePost != null) {
+            ModalBottomSheet(
+                onDismissRequest = { 
+                    showShareSheet = false
+                    selectedSharePost = null
+                },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surface
+            ) {
+                ShareSheetContent(
+                    post = selectedSharePost!!,
+                    socialViewModel = socialViewModel,
+                    onDismiss = { 
+                        showShareSheet = false
+                        selectedSharePost = null
+                    }
+                )
+            }
         }
 
         if (showEditDialog && currentUserProfile != null) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.subtrackai.model.*
 import com.example.subtrackai.model.Comment
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.Filter
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -44,9 +45,13 @@ class SocialViewModel : ViewModel() {
     }
 
     private fun observeFriends(uid: String) {
-        // Query accepted friend requests where user is either sender or receiver
+        // Query accepted friend requests where current user is involved
         firestore.collection("friendRequests")
-            .whereIn("status", listOf("accepted"))
+            .whereEqualTo("status", "accepted")
+            .where(Filter.or(
+                Filter.equalTo("fromId", uid),
+                Filter.equalTo("toId", uid)
+            ))
             .addSnapshotListener { snapshot, _ ->
                 val requests = snapshot?.toObjects(FriendRequest::class.java) ?: emptyList()
                 val friendIds = requests.map { if (it.fromId == uid) it.toId else it.fromId }.filter { it != uid }
@@ -83,7 +88,11 @@ class SocialViewModel : ViewModel() {
 
     private fun observeVisitorFriends(uid: String) {
         firestore.collection("friendRequests")
-            .whereIn("status", listOf("accepted"))
+            .whereEqualTo("status", "accepted")
+            .where(Filter.or(
+                Filter.equalTo("fromId", uid),
+                Filter.equalTo("toId", uid)
+            ))
             .addSnapshotListener { snapshot, _ ->
                 val requests = snapshot?.toObjects(FriendRequest::class.java) ?: emptyList()
                 val friendIds = requests.map { if (it.fromId == uid) it.toId else it.fromId }.filter { it != uid }
@@ -103,8 +112,13 @@ class SocialViewModel : ViewModel() {
 
     private fun observeFriendRequests(uid: String) {
         firestore.collection("friendRequests")
-            .whereEqualTo("toId", uid)
-            .whereEqualTo("status", "pending")
+            .where(Filter.and(
+                Filter.equalTo("status", "pending"),
+                Filter.or(
+                    Filter.equalTo("fromId", uid),
+                    Filter.equalTo("toId", uid)
+                )
+            ))
             .addSnapshotListener { snapshot, _ ->
                 _friendRequests.value = snapshot?.toObjects(FriendRequest::class.java) ?: emptyList()
             }
@@ -124,7 +138,10 @@ class SocialViewModel : ViewModel() {
 
     fun sendFriendRequest(toUser: UserProfile) {
         val currentUser = auth.currentUser ?: return
-        if (toUser.uid == currentUser.uid) return // Cannot friend self
+        if (toUser.uid == currentUser.uid) return 
+        
+        // Deterministic ID to avoid duplicates and fix cancellation
+        val requestId = if (currentUser.uid < toUser.uid) "${currentUser.uid}_${toUser.uid}" else "${toUser.uid}_${currentUser.uid}"
         
         val request = mapOf(
             "fromId" to currentUser.uid,
@@ -133,7 +150,13 @@ class SocialViewModel : ViewModel() {
             "status" to "pending",
             "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
         )
-        firestore.collection("friendRequests").add(request)
+        firestore.collection("friendRequests").document(requestId).set(request)
+    }
+
+    fun cancelFriendRequest(toUserId: String) {
+        val currentUser = auth.currentUser ?: return
+        val requestId = if (currentUser.uid < toUserId) "${currentUser.uid}_${toUserId}" else "${toUserId}_${currentUser.uid}"
+        firestore.collection("friendRequests").document(requestId).delete()
     }
 
     fun acceptFriendRequest(request: FriendRequest) {
@@ -188,9 +211,9 @@ class SocialViewModel : ViewModel() {
             authorName = _userProfile.value?.username ?: "User",
             content = post.content,
             shared = true,
-            originalPostId = post.id,
-            originalAuthorName = post.authorName,
-            originalAuthorId = post.userId,
+            originalPostId = if (post.shared) post.originalPostId else post.id,
+            originalAuthorName = if (post.shared) post.originalAuthorName else post.authorName,
+            originalAuthorId = if (post.shared) post.originalAuthorId else post.userId,
             likes = 0,
             likedBy = emptyList(),
             commentsEnabled = true,
