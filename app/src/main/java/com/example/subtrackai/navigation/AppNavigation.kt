@@ -263,7 +263,7 @@ fun MainScreen(
 
     val safeBack = {
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime > 500) {
+        if (currentTime - lastBackPressTime > 600) { // Slightly longer debounce for safety
             if (isChatActive) {
                 isChatActive = false
                 chatUser = null
@@ -482,9 +482,10 @@ fun MainScreen(
                     socialViewModel = socialViewModel,
                     chatViewModel = peerChatViewModel,
                     isDarkMode = isDarkMode,
-                    onChatSelected = { active, user -> 
-                        isChatActive = active
+                    selectedUser = chatUser,
+                    onUserSelected = { user ->
                         chatUser = user
+                        isChatActive = user != null
                     }
                 )
             }

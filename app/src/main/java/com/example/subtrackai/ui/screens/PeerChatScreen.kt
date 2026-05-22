@@ -44,16 +44,11 @@ fun PeerChatScreen(
     socialViewModel: SocialViewModel,
     chatViewModel: PeerChatViewModel,
     isDarkMode: Boolean,
-    onChatSelected: (Boolean, UserProfile?) -> Unit = { _, _ -> }
+    selectedUser: UserProfile?,
+    onUserSelected: (UserProfile?) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
-    var selectedUser by remember { mutableStateOf<UserProfile?>(null) }
-
-    // Notify parent about chat state and selected user
-    LaunchedEffect(selectedUser) {
-        onChatSelected(selectedUser != null, selectedUser)
-    }
     
     val messages by chatViewModel.messages.collectAsState()
     val friends by socialViewModel.friends.collectAsState()
@@ -126,7 +121,7 @@ fun PeerChatScreen(
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         items(displayList) { user ->
                             UserListItem(user) {
-                                selectedUser = user
+                                onUserSelected(user)
                                 chatViewModel.startChat(user.uid)
                             }
                         }
