@@ -29,6 +29,7 @@ fun SettingsScreen(
     authViewModel: AuthViewModel,
     socialViewModel: SocialViewModel,
     settingsViewModel: SettingsViewModel,
+    dashboardViewModel: com.example.subtrackai.viewmodel.DashboardViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     isDarkMode: Boolean,
     onThemeToggle: () -> Unit,
     onNavigateToProfile: () -> Unit
@@ -124,8 +125,14 @@ fun SettingsScreen(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clickable { 
+                                            val oldCurrency = currentCurrency
                                             settingsViewModel.setCurrency(currency)
                                             socialViewModel.updateCurrency(currency)
+                                            
+                                            if (oldCurrency != currency) {
+                                                dashboardViewModel.updateCurrencyPrices(oldCurrency, currency, settingsViewModel)
+                                            }
+
                                             showCurrencyDialog = false
                                         }
                                         .padding(16.dp),

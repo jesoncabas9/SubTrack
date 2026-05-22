@@ -43,11 +43,7 @@ fun AnalyticsScreen(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-        ) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // Professional Header
             Surface(
                 modifier = Modifier.fillMaxWidth(),

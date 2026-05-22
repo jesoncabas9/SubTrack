@@ -43,11 +43,17 @@ import java.util.*
 fun PeerChatScreen(
     socialViewModel: SocialViewModel,
     chatViewModel: PeerChatViewModel,
-    isDarkMode: Boolean
+    isDarkMode: Boolean,
+    onChatSelected: (Boolean, UserProfile?) -> Unit = { _, _ -> }
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<UserProfile>>(emptyList()) }
     var selectedUser by remember { mutableStateOf<UserProfile?>(null) }
+
+    // Notify parent about chat state and selected user
+    LaunchedEffect(selectedUser) {
+        onChatSelected(selectedUser != null, selectedUser)
+    }
     
     val messages by chatViewModel.messages.collectAsState()
     val friends by socialViewModel.friends.collectAsState()
@@ -61,195 +67,134 @@ fun PeerChatScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (selectedUser != null) {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box {
-                                Surface(
-                                    modifier = Modifier.size(36.dp),
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            ProfileIcons.getIcon(selectedUser?.profileIcon),
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                                // Status indicator
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .align(Alignment.BottomEnd)
-                                        .background(
-                                            if (selectedUser?.isOnline == true) Color(0xFF4CAF50) else Color.Gray,
-                                            CircleShape
-                                        )
-                                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    selectedUser?.username ?: "",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    if (selectedUser?.isOnline == true) "Online" else "Offline",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (selectedUser?.isOnline == true) Color(0xFF4CAF50) else Color.Gray
-                                )
-                            }
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (selectedUser == null) {
+            // User Search / Friend List
+            Column(modifier = Modifier.padding(horizontal = 16.dp).statusBarsPadding()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { 
+                        searchQuery = it
+                        if (it.length > 2) {
+                            socialViewModel.searchUsers(it) { results -> searchResults = results }
+                        } else if (it.isEmpty()) {
+                            searchResults = emptyList()
                         }
                     },
-                    navigationIcon = {
-                        IconButton(onClick = { selectedUser = null }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
+                    placeholder = { Text("Search users to chat...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary
                     )
                 )
-            }
-        },
-        contentWindowInsets = WindowInsets(0.dp)
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (selectedUser == null) {
-                // User Search / Friend List
-                Column(modifier = Modifier.padding(16.dp)) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { 
-                            searchQuery = it
-                            if (it.length > 2) {
-                                socialViewModel.searchUsers(it) { results -> searchResults = results }
-                            } else if (it.isEmpty()) {
-                                searchResults = emptyList()
-                            }
-                        },
-                        placeholder = { Text("Search users to chat...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(24.dp),
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            unfocusedBorderColor = Color.Transparent,
-                            focusedBorderColor = MaterialTheme.colorScheme.primary
-                        )
-                    )
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    Text(
-                        text = if (searchQuery.isEmpty()) "Recent Conversations" else "Search Results",
-                        fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    text = if (searchQuery.isEmpty()) "Recent Conversations" else "Search Results",
+                    fontWeight = FontWeight.ExtraBold,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    val displayList = if (searchQuery.isEmpty()) friends else searchResults
-                    if (displayList.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    if (searchQuery.isEmpty()) Icons.Default.People else Icons.Default.SearchOff,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    if (searchQuery.isEmpty()) "No friends yet. Search and add some!" else "No users found matching \"$searchQuery\"",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                            }
+                val displayList = if (searchQuery.isEmpty()) friends else searchResults
+                if (displayList.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                if (searchQuery.isEmpty()) Icons.Default.People else Icons.Default.SearchOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                if (searchQuery.isEmpty()) "No friends yet. Search and add some!" else "No users found matching \"$searchQuery\"",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
-                    } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(displayList) { user ->
-                                UserListItem(user) {
-                                    selectedUser = user
-                                    chatViewModel.startChat(user.uid)
-                                }
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(displayList) { user ->
+                            UserListItem(user) {
+                                selectedUser = user
+                                chatViewModel.startChat(user.uid)
                             }
                         }
                     }
                 }
-            } else {
-                // Active Chat
-                Column(modifier = Modifier.fillMaxSize()) {
-                    if (showWarning) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Security, 
-                                    contentDescription = null, 
-                                    tint = MaterialTheme.colorScheme.error, 
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    "Your messages are private. Be careful with personal details.",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { showWarning = false }, modifier = Modifier.size(24.dp)) {
-                                    Icon(
-                                        Icons.Default.Close, 
-                                        contentDescription = "Dismiss", 
-                                        tint = MaterialTheme.colorScheme.error, 
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-                        reverseLayout = false,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(vertical = 16.dp)
+            }
+        } else {
+            // Active Chat
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (showWarning) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        items(messages, key = { it.id }) { message ->
-                            AnimatedVisibility(
-                                visible = true,
-                                enter = slideInVertically(
-                                    initialOffsetY = { it },
-                                    animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)
-                                ) + fadeIn(),
-                                label = "messageEntry"
-                            ) {
-                                ChatBubble(message = message, isMe = message.senderId != selectedUser?.uid)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Security, 
+                                contentDescription = null, 
+                                tint = MaterialTheme.colorScheme.error, 
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Your messages are private. Be careful with personal details.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { showWarning = false }, modifier = Modifier.size(24.dp)) {
+                                Icon(
+                                    Icons.Default.Close, 
+                                    contentDescription = "Dismiss", 
+                                    tint = MaterialTheme.colorScheme.error, 
+                                    modifier = Modifier.size(14.dp)
+                                )
                             }
                         }
                     }
-                    
-                    ChatInput { text ->
-                        chatViewModel.sendMessage(selectedUser!!.uid, text)
+                }
+                
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                    reverseLayout = false,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = slideInVertically(
+                                initialOffsetY = { it },
+                                animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy)
+                            ) + fadeIn(),
+                            label = "messageEntry"
+                        ) {
+                            ChatBubble(message = message, isMe = message.senderId != selectedUser?.uid)
+                        }
                     }
+                }
+                
+                ChatInput { text ->
+                    chatViewModel.sendMessage(selectedUser!!.uid, text)
                 }
             }
         }

@@ -159,6 +159,12 @@ class SocialViewModel : ViewModel() {
         firestore.collection("friendRequests").document(requestId).delete()
     }
 
+    fun unfriendUser(toUserId: String) {
+        val currentUser = auth.currentUser ?: return
+        val requestId = if (currentUser.uid < toUserId) "${currentUser.uid}_${toUserId}" else "${toUserId}_${currentUser.uid}"
+        firestore.collection("friendRequests").document(requestId).delete()
+    }
+
     fun acceptFriendRequest(request: FriendRequest) {
         firestore.collection("friendRequests").document(request.id).update("status", "accepted")
         // In a real app, we'd add to a friends sub-collection here as well

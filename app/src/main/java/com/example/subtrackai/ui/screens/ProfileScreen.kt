@@ -71,7 +71,6 @@ fun ProfileScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                modifier = Modifier.statusBarsPadding(),
                 title = { Text(if (isOwner) "My Profile" else profile?.username ?: "Profile", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -173,12 +172,17 @@ fun ProfileScreen(
 
                         if (isFriend) {
                             Button(
-                                onClick = { /* Message flow maybe? */ },
+                                onClick = { socialViewModel.unfriendUser(profile?.uid ?: "") },
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                )
                             ) {
-                                Text("Friends")
+                                Icon(Icons.Default.PersonRemove, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Unfriend")
                             }
                         } else if (request != null && request.status == "pending") {
                             Button(

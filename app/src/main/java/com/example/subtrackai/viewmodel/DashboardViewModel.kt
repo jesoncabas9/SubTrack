@@ -113,6 +113,33 @@ class DashboardViewModel : ViewModel() {
         _totalMonthlySpend.value = if (total.isNaN()) 0.0 else total
     }
 
+    fun updateCurrencyPrices(oldSymbol: String, newSymbol: String, settingsViewModel: SettingsViewModel) {
+        val uid = auth.currentUser?.uid ?: return
+        val subs = _subscriptions.value
+        if (subs.isEmpty()) return
+
+        val oldRate = settingsViewModel.getRate(oldSymbol)
+        val newRate = settingsViewModel.getRate(newSymbol)
+        
+        val batch = firestore.batch()
+        subs.forEach { sub ->
+            // Convert to USD first, then to new currency
+            val priceInUsd = sub.price / oldRate
+            val newPrice = priceInUsd * newRate
+            
+            val docRef = firestore.collection("users")
+                .document(uid)
+                .collection("subscriptions")
+                .document(sub.id)
+            
+            batch.update(docRef, "price", Math.round(newPrice * 100.0) / 100.0)
+        }
+        
+        batch.commit().addOnSuccessListener {
+            observeSubscriptions() // Refresh
+        }
+    }
+
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
     }

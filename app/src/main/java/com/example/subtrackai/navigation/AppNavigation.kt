@@ -3,9 +3,11 @@ package com.example.subtrackai.navigation
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -74,6 +76,19 @@ fun AppNavigation() {
         }
     }
 
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
+    val safeBack = {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime > 500) {
+            if (navController.previousBackStackEntry != null) {
+                navController.popBackStack()
+            } else {
+                (context as? android.app.Activity)?.finish()
+            }
+            lastBackPressTime = currentTime
+        }
+    }
+
     SubTrackTheme(darkTheme = targetThemeState) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (showInitialization) {
@@ -136,7 +151,7 @@ fun AppNavigation() {
                             feedViewModel = feedViewModel,
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = { navController.popBackStack() }
+                            onBack = safeBack
                         )
                     }
 
@@ -144,7 +159,7 @@ fun AppNavigation() {
                         ProfileScreen(
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = { navController.popBackStack() },
+                            onBack = safeBack,
                             onNavigateToCreatePost = { navController.navigate("create_post_profile") },
                             onNavigateToProfile = { userId -> navController.navigate("profile_view/$userId") }
                         )
@@ -155,7 +170,7 @@ fun AppNavigation() {
                         ProfileScreen(
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = { navController.popBackStack() },
+                            onBack = safeBack,
                             onNavigateToCreatePost = {}, // Visitors can't post to someone else's profile
                             onNavigateToProfile = { otherId -> navController.navigate("profile_view/$otherId") },
                             visitorUserId = userId
@@ -168,7 +183,7 @@ fun AppNavigation() {
                             feedViewModel = feedViewModel,
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = { navController.popBackStack() },
+                            onBack = safeBack,
                             profilePost = true
                         )
                     }
@@ -180,7 +195,7 @@ fun AppNavigation() {
                         ChatScreen(
                             viewModel = chatViewModel,
                             subscriptions = subs,
-                            onBack = { navController.popBackStack() }
+                            onBack = safeBack
                         )
                     }
 
@@ -188,7 +203,7 @@ fun AppNavigation() {
                         val dashboardViewModel: DashboardViewModel = viewModel()
                         AnalyticsScreen(
                             viewModel = dashboardViewModel,
-                            onBack = { navController.popBackStack() },
+                            onBack = safeBack,
                             isDarkMode = targetThemeState
                         )
                     }
@@ -241,11 +256,23 @@ fun MainScreen(
     val userProfile by socialViewModel.userProfile.collectAsState()
     val context = LocalContext.current
 
-    // Security: Handle back button to prevent "White Screen" bug
-    androidx.activity.compose.BackHandler(enabled = true) {
-        if (!navController.popBackStack()) {
-            // If internal nav can't go back, exit the app instead of popping root
-            (context as? android.app.Activity)?.finish()
+    var isChatActive by remember { mutableStateOf(false) }
+    var chatUser by remember { mutableStateOf<com.example.subtrackai.model.UserProfile?>(null) }
+    var showChatMenu by remember { mutableStateOf(false) }
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
+
+    val safeBack = {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastBackPressTime > 500) {
+            if (isChatActive) {
+                isChatActive = false
+                chatUser = null
+            } else if (navController.previousBackStackEntry != null) {
+                navController.popBackStack()
+            } else {
+                (context as? android.app.Activity)?.finish()
+            }
+            lastBackPressTime = currentTime
         }
     }
 
@@ -257,68 +284,155 @@ fun MainScreen(
         BottomNavItem.Settings
     )
 
+    // Security: Handle back button to prevent "White Screen" bug
+    androidx.activity.compose.BackHandler(enabled = true) {
+        safeBack()
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                modifier = Modifier.statusBarsPadding(),
-                title = {
-                    val titleText = when (currentDestination?.route) {
-                        BottomNavItem.Dashboard.route -> "SubTrack"
-                        BottomNavItem.Feed.route -> "Feed"
-                        BottomNavItem.Chat.route -> "Messages"
-                        BottomNavItem.Notifications.route -> "Notifications"
-                        BottomNavItem.Settings.route -> "Settings"
-                        else -> "SubTrack"
-                    }
-                    Text(
-                        titleText,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = if (currentDestination?.route == BottomNavItem.Dashboard.route) 
-                            Modifier.padding(start = 32.dp) else Modifier
+            if (isChatActive && chatUser != null) {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box {
+                                Surface(
+                                    modifier = Modifier.size(36.dp),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            com.example.subtrackai.util.ProfileIcons.getIcon(chatUser?.profileIcon),
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .align(Alignment.BottomEnd)
+                                        .background(
+                                            if (chatUser?.isOnline == true) Color(0xFF4CAF50) else Color.Gray,
+                                            CircleShape
+                                        )
+                                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    chatUser?.username ?: "",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    if (chatUser?.isOnline == true) "Online" else "Offline",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (chatUser?.isOnline == true) Color(0xFF4CAF50) else Color.Gray
+                                )
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = safeBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        Box {
+                            IconButton(onClick = { showChatMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "Menu")
+                            }
+                            DropdownMenu(expanded = showChatMenu, onDismissRequest = { showChatMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("View Profile") },
+                                    onClick = {
+                                        chatUser?.uid?.let { onNavigateToVisitorProfile(it) }
+                                        showChatMenu = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Unfriend", color = MaterialTheme.colorScheme.error) },
+                                    onClick = {
+                                        chatUser?.uid?.let { socialViewModel.unfriendUser(it) }
+                                        isChatActive = false
+                                        chatUser = null
+                                        showChatMenu = false
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.PersonRemove, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                                )
+                            }
+                        }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
                     )
-                },
-                navigationIcon = {
-                    if (currentDestination?.route == BottomNavItem.Dashboard.route) {
-                        Row(modifier = Modifier.padding(start = 16.dp)) {
-                            androidx.compose.foundation.Image(
-                                painter = painterResource(id = R.drawable.subtrack_logo),
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp)
-                            )
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        val titleText = when (currentDestination?.route) {
+                            BottomNavItem.Dashboard.route -> "SubTrack"
+                            BottomNavItem.Feed.route -> "Feed"
+                            BottomNavItem.Chat.route -> "Messages"
+                            BottomNavItem.Notifications.route -> "Notifications"
+                            BottomNavItem.Settings.route -> "Settings"
+                            else -> "SubTrack"
                         }
-                    }
-                },
-                actions = {
-                    if (currentDestination?.route == BottomNavItem.Dashboard.route) {
-                        IconButton(onClick = { rootNavController.navigate("analytics") }) {
-                            Icon(Icons.Default.BarChart, contentDescription = "Analytics")
+                        Text(
+                            titleText,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = if (currentDestination?.route == BottomNavItem.Dashboard.route) 
+                                Modifier.padding(start = 32.dp) else Modifier
+                        )
+                    },
+                    navigationIcon = {
+                        if (currentDestination?.route == BottomNavItem.Dashboard.route) {
+                            Row(modifier = Modifier.padding(start = 16.dp)) {
+                                androidx.compose.foundation.Image(
+                                    painter = painterResource(id = R.drawable.subtrack_logo),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
                         }
-                    }
+                    },
+                    actions = {
+                        if (currentDestination?.route == BottomNavItem.Dashboard.route) {
+                            IconButton(onClick = { rootNavController.navigate("analytics") }) {
+                                Icon(Icons.Default.BarChart, contentDescription = "Analytics")
+                            }
+                        }
 
-                    if (currentDestination?.route == BottomNavItem.Dashboard.route || currentDestination?.route == BottomNavItem.Feed.route) {
-                        IconButton(onClick = onNavigateToProfile) {
-                            Surface(
-                                modifier = Modifier.size(32.dp),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        com.example.subtrackai.util.ProfileIcons.getIcon(userProfile?.profileIcon),
-                                        contentDescription = "Profile",
-                                        modifier = Modifier.size(20.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
+                        if (currentDestination?.route == BottomNavItem.Dashboard.route || currentDestination?.route == BottomNavItem.Feed.route) {
+                            IconButton(onClick = onNavigateToProfile) {
+                                Surface(
+                                    modifier = Modifier.size(32.dp),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            com.example.subtrackai.util.ProfileIcons.getIcon(userProfile?.profileIcon),
+                                            contentDescription = "Profile",
+                                            modifier = Modifier.size(20.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -367,7 +481,11 @@ fun MainScreen(
                 PeerChatScreen(
                     socialViewModel = socialViewModel,
                     chatViewModel = peerChatViewModel,
-                    isDarkMode = isDarkMode
+                    isDarkMode = isDarkMode,
+                    onChatSelected = { active, user -> 
+                        isChatActive = active
+                        chatUser = user
+                    }
                 )
             }
             composable(BottomNavItem.Notifications.route) {
