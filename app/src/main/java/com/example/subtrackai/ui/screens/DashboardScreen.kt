@@ -266,8 +266,8 @@ fun DashboardScreen(
                                         }.time
                                         val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
                                         allSubscriptions
-                                            .filter { it.renewalDate.isNotBlank() }
-                                            .mapNotNull { try { Pair(it, format.parse(it.renewalDate)) } catch(e: Exception) { null } }
+                                            .filter { (it.renewalDate ?: "").isNotBlank() }
+                                            .mapNotNull { try { Pair(it, format.parse(it.renewalDate ?: "")) } catch(e: Exception) { null } }
                                             .filter { it.second != null && !it.second!!.before(today) }
                                             .minByOrNull { it.second!!.time }
                                     }
@@ -364,7 +364,7 @@ fun DashboardScreen(
                     showDialog = true
                 },
                 onDelete = {
-                    viewModel.deleteSubscription(selectedSubscription!!.id)
+                    selectedSubscription?.id?.let { viewModel.deleteSubscription(it) }
                     showDetailsSheet = false
                     selectedSubscription = null
                 }
@@ -393,10 +393,12 @@ fun DashboardScreen(
                 },
                 onConfirm = { name: String, price: Double, cycle: String, date: String, cat: String, isTrial: Boolean ->
                     if (editingSubscription != null) {
-                        viewModel.updateSubscription(
-                            editingSubscription!!.id,
-                            name, price, cycle, date, cat, isTrial
-                        )
+                        editingSubscription?.id?.let {
+                            viewModel.updateSubscription(
+                                it,
+                                name, price, cycle, date, cat, isTrial
+                            )
+                        }
                     } else {
                         viewModel.addSubscription(name, price, cycle, date, cat, isTrial)
                     }

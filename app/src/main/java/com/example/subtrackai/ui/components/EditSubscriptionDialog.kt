@@ -30,9 +30,9 @@ fun EditSubscriptionDialog(
 ) {
     var name by remember { mutableStateOf(subscription.name) }
     var price by remember { mutableStateOf(subscription.price.toString()) }
-    var billingCycle by remember { mutableStateOf(subscription.billingCycle) }
-    var renewalDate by remember { mutableStateOf(subscription.renewalDate) }
-    var category by remember { mutableStateOf(subscription.category) }
+    var billingCycle by remember { mutableStateOf(subscription.billingCycle ?: "Monthly") }
+    var renewalDate by remember { mutableStateOf(subscription.renewalDate ?: "") }
+    var category by remember { mutableStateOf(subscription.category ?: "Other") }
     var isTrial by remember { mutableStateOf(subscription.isTrial) }
     
     val categories = listOf("Streaming", "Gaming", "Music", "Tools", "Finance", "Other")

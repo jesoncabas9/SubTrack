@@ -71,15 +71,12 @@ fun CreatePostScreen(
                 .padding(16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
+                com.example.subtrackai.ui.components.ProfileAvatar(
+                    iconName = userProfile?.profileIcon,
+                    avatarUrl = userProfile?.avatarUrl,
                     modifier = Modifier.size(48.dp),
-                    shape = CircleShape,
-                    color = DeepPurple.copy(alpha = 0.1f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(ProfileIcons.getIcon(userProfile?.profileIcon), contentDescription = null, tint = DeepPurple)
-                    }
-                }
+                    tint = DeepPurple
+                )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(authorName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }

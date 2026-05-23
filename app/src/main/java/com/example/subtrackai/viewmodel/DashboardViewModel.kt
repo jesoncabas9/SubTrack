@@ -1,18 +1,21 @@
 package com.example.subtrackai.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.subtrackai.model.Subscription
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.subtrackai.supabase
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.text.SimpleDateFormat
 import java.util.*
 
 class DashboardViewModel : ViewModel() {
-    private val firestore = FirebaseFirestore.getInstance()
-    private val auth = FirebaseAuth.getInstance()
 
     private val _subscriptions = MutableStateFlow<List<Subscription>>(emptyList())
     val subscriptions: StateFlow<List<Subscription>> = _subscriptions.asStateFlow()
@@ -40,33 +43,38 @@ class DashboardViewModel : ViewModel() {
     val upcomingTrialEndings: StateFlow<List<Subscription>> = _upcomingTrialEndings.asStateFlow()
 
     init {
-        observeSubscriptions()
+        viewModelScope.launch {
+            supabase.auth.sessionStatus.collect { status ->
+                if (status is SessionStatus.Authenticated) {
+                    observeSubscriptions()
+                } else {
+                    _subscriptions.value = emptyList()
+                }
+            }
+        }
     }
 
-    private fun observeSubscriptions() {
-        val uid = auth.currentUser?.uid ?: return
-        firestore.collection("users")
-            .document(uid)
-            .collection("subscriptions")
-            .get(com.google.firebase.firestore.Source.CACHE) // Try cache first for speed
-            .addOnSuccessListener { snapshot ->
-                val subs = snapshot?.toObjects(Subscription::class.java) ?: emptyList()
+    fun observeSubscriptions() {
+        val user = supabase.auth.currentUserOrNull() ?: return
+        val uid = user.id
+        
+        viewModelScope.launch {
+            try {
+                val subs = supabase.postgrest["subscriptions"]
+                    .select {
+                        filter {
+                            eq("user_id", uid)
+                        }
+                    }
+                    .decodeList<Subscription>()
+                
                 _subscriptions.value = subs
                 calculateTotalMonthlySpend(subs)
                 calculateInsights(subs)
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error fetching subscriptions", e)
             }
-            
-        // Still keep a listener but with lower frequency or just for updates
-        firestore.collection("users")
-            .document(uid)
-            .collection("subscriptions")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                val subs = snapshot?.toObjects(Subscription::class.java) ?: emptyList()
-                _subscriptions.value = subs
-                calculateTotalMonthlySpend(subs)
-                calculateInsights(subs)
-            }
+        }
     }
 
     private fun calculateInsights(subs: List<Subscription>) {
@@ -76,15 +84,14 @@ class DashboardViewModel : ViewModel() {
         val format = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
         for (sub in subs) {
-            // Savings Insight: Monthly to Yearly usually saves ~20%
             if (sub.billingCycle == "Monthly") {
                 savings += (sub.price * 12 * 0.2)
             }
             
-            // Trial Warnings
-            if (sub.isTrial && sub.renewalDate.isNotBlank()) {
+            val renewalDate = sub.renewalDate ?: ""
+            if (sub.isTrial && renewalDate.isNotBlank()) {
                 try {
-                    val date = format.parse(sub.renewalDate)
+                    val date = format.parse(renewalDate)
                     if (date != null) {
                         val diff = date.time - today.timeInMillis
                         val days = diff / (1000 * 60 * 60 * 24)
@@ -96,7 +103,6 @@ class DashboardViewModel : ViewModel() {
                 }
             }
         }
-        // If no savings or trials, show a default insight to ensure the card is visible
         _potentialAnnualSavings.value = if (savings > 0 || trials.isNotEmpty()) savings else 0.01
         _upcomingTrialEndings.value = trials
     }
@@ -114,29 +120,32 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun updateCurrencyPrices(oldSymbol: String, newSymbol: String, settingsViewModel: SettingsViewModel) {
-        val uid = auth.currentUser?.uid ?: return
         val subs = _subscriptions.value
         if (subs.isEmpty()) return
 
         val oldRate = settingsViewModel.getRate(oldSymbol)
         val newRate = settingsViewModel.getRate(newSymbol)
         
-        val batch = firestore.batch()
-        subs.forEach { sub ->
-            // Convert to USD first, then to new currency
-            val priceInUsd = sub.price / oldRate
-            val newPrice = priceInUsd * newRate
-            
-            val docRef = firestore.collection("users")
-                .document(uid)
-                .collection("subscriptions")
-                .document(sub.id)
-            
-            batch.update(docRef, "price", Math.round(newPrice * 100.0) / 100.0)
-        }
-        
-        batch.commit().addOnSuccessListener {
-            observeSubscriptions() // Refresh
+        viewModelScope.launch {
+            try {
+                subs.forEach { sub ->
+                    val priceInUsd = sub.price / oldRate
+                    val newPrice = Math.round((priceInUsd * newRate) * 100.0) / 100.0
+                    
+                    sub.id?.let {
+                        supabase.postgrest["subscriptions"].update(
+                            mapOf("price" to newPrice)
+                        ) {
+                            filter {
+                                eq("id", it)
+                            }
+                        }
+                    }
+                }
+                observeSubscriptions()
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error updating currency prices", e)
+            }
         }
     }
 
@@ -149,13 +158,9 @@ class DashboardViewModel : ViewModel() {
     }
 
     fun addSubscription(name: String, price: Double, billingCycle: String, renewalDate: String, category: String, isTrial: Boolean = false) {
-        val currentUser = auth.currentUser
-        if (currentUser == null) {
-            android.util.Log.e("DashboardViewModel", "Cannot add subscription: User not logged in")
-            return
-        }
-        val uid = currentUser.uid
+        val user = supabase.auth.currentUserOrNull() ?: return
         val newSub = Subscription(
+            userId = user.id,
             name = name,
             price = price,
             billingCycle = billingCycle,
@@ -164,24 +169,20 @@ class DashboardViewModel : ViewModel() {
             isTrial = isTrial
         )
         viewModelScope.launch {
-            firestore.collection("users")
-                .document(uid)
-                .collection("subscriptions")
-                .add(newSub)
-                .addOnSuccessListener {
-                    android.util.Log.d("DashboardViewModel", "Subscription added successfully with ID: ${it.id}")
-                    // Tweak potential savings to force insight update
-                }
-                .addOnFailureListener { e ->
-                    android.util.Log.e("DashboardViewModel", "Error adding subscription", e)
-                }
+            try {
+                supabase.postgrest["subscriptions"].insert(newSub)
+                observeSubscriptions()
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error adding subscription: ${e.message}", e)
+            }
         }
     }
 
     fun updateSubscription(id: String, name: String, price: Double, billingCycle: String, renewalDate: String, category: String, isTrial: Boolean = false) {
-        val uid = auth.currentUser?.uid ?: return
+        val user = supabase.auth.currentUserOrNull() ?: return
         val updatedSub = Subscription(
             id = id,
+            userId = user.id,
             name = name,
             price = price,
             billingCycle = billingCycle,
@@ -190,22 +191,31 @@ class DashboardViewModel : ViewModel() {
             isTrial = isTrial
         )
         viewModelScope.launch {
-            firestore.collection("users")
-                .document(uid)
-                .collection("subscriptions")
-                .document(id)
-                .set(updatedSub)
+            try {
+                supabase.postgrest["subscriptions"].update(updatedSub) {
+                    filter {
+                        eq("id", id)
+                    }
+                }
+                observeSubscriptions()
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error updating subscription", e)
+            }
         }
     }
 
     fun deleteSubscription(id: String) {
-        val uid = auth.currentUser?.uid ?: return
         viewModelScope.launch {
-            firestore.collection("users")
-                .document(uid)
-                .collection("subscriptions")
-                .document(id)
-                .delete()
+            try {
+                supabase.postgrest["subscriptions"].delete {
+                    filter {
+                        eq("id", id)
+                    }
+                }
+                observeSubscriptions()
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error deleting subscription", e)
+            }
         }
     }
 }

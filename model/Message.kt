@@ -8,7 +8,7 @@ data class Message(
     @SerialName("id") val id: String? = null,
     @SerialName("sender_id") val senderId: String = "",
     @SerialName("receiver_id") val receiverId: String = "",
-    @SerialName("text") val text: String = "",
-    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("text") val content: String = "",
+    @SerialName("timestamp") val timestamp: String? = null,
     @SerialName("is_read") val isRead: Boolean = false
 )

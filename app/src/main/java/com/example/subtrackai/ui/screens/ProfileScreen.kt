@@ -92,15 +92,12 @@ fun ProfileScreen(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Surface(
-                        modifier = Modifier.size(100.dp),
-                        shape = CircleShape,
-                        color = DeepPurple.copy(alpha = 0.1f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(ProfileIcons.getIcon(profile?.profileIcon), contentDescription = null, modifier = Modifier.size(60.dp), tint = DeepPurple)
-                        }
-                    }
+                    com.example.subtrackai.ui.components.ProfileAvatar(
+                iconName = profile?.profileIcon,
+                avatarUrl = profile?.avatarUrl,
+                modifier = Modifier.size(100.dp),
+                tint = DeepPurple
+            )
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
@@ -165,9 +162,11 @@ fun ProfileScreen(
                         // Use deterministic ID logic for local check
                         val currentUid = currentUserProfile?.uid ?: ""
                         val targetUid = profile?.uid ?: ""
-                        val requestId = if (currentUid < targetUid) "${currentUid}_${targetUid}" else "${targetUid}_${currentUid}"
                         
-                        val request = friendRequests.find { it.id == requestId || (it.fromId == currentUid && it.toId == targetUid) }
+                        val request = friendRequests.find { 
+                            (it.senderId == currentUid && it.receiverId == targetUid) || 
+                            (it.senderId == targetUid && it.receiverId == currentUid) 
+                        }
                         val isFriend = myFriends.any { it.uid == targetUid }
 
                         if (isFriend) {
@@ -256,7 +255,7 @@ fun ProfileScreen(
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     PostItem(
                         post = post,
-                        onLikeToggle = { feedViewModel.toggleLike(post.id) },
+                        onLikeToggle = { post.id?.let { feedViewModel.toggleLike(it) } },
                         onProfileClick = { },
                         onOriginalProfileClick = { authorId -> 
                             if (authorId != (visitorUserId ?: currentUserProfile?.uid)) {
@@ -264,8 +263,8 @@ fun ProfileScreen(
                             }
                         },
                         isOwner = post.userId == currentUserId,
-                        onDelete = { feedViewModel.deletePost(post.id) },
-                        onEdit = { newContent -> feedViewModel.editPost(post.id, newContent) },
+                        onDelete = { post.id?.let { feedViewModel.deletePost(it) } },
+                        onEdit = { newContent -> post.id?.let { feedViewModel.editPost(it, newContent) } },
                         onCommentClick = { 
                             selectedPostId = post.id
                             showCommentSheet = true
@@ -274,7 +273,7 @@ fun ProfileScreen(
                             selectedSharePost = post
                             showShareSheet = true
                         },
-                        onToggleComments = { feedViewModel.editPost(post.id, if (post.commentsEnabled) "OFF" else "ON") },
+                        onToggleComments = { post.id?.let { feedViewModel.editPost(it, if (post.commentsEnabled) "OFF" else "ON") } },
                         showFeedTag = true
                     )
                 }

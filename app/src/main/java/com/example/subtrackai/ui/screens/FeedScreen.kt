@@ -28,10 +28,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.subtrackai.model.Post
+import com.example.subtrackai.supabase
 import com.example.subtrackai.ui.theme.DeepPurple
 import com.example.subtrackai.ui.theme.LightPurple
 import com.example.subtrackai.util.ProfileIcons
 import com.example.subtrackai.viewmodel.FeedViewModel
+import io.github.jan.supabase.auth.auth
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -46,8 +48,7 @@ fun FeedScreen(
     isDarkMode: Boolean
 ) {
     val posts by viewModel.feedPosts.collectAsState()
-    val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
-    val currentUserId = auth.currentUser?.uid
+    val currentUserId = supabase.auth.currentUserOrNull()?.id
     
     val userProfile by socialViewModel.userProfile.collectAsState()
 
@@ -77,20 +78,12 @@ fun FeedScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
+                    com.example.subtrackai.ui.components.ProfileAvatar(
+                        iconName = userProfile?.profileIcon,
+                        avatarUrl = userProfile?.avatarUrl,
                         modifier = Modifier.size(44.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                ProfileIcons.getIcon(userProfile?.profileIcon), 
-                                contentDescription = null, 
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Surface(
                         modifier = Modifier.weight(1f),
@@ -134,12 +127,12 @@ fun FeedScreen(
                     items(posts) { post ->
                         PostItem(
                             post = post, 
-                            onLikeToggle = { viewModel.toggleLike(post.id) },
+                            onLikeToggle = { post.id?.let { viewModel.toggleLike(it) } },
                             onProfileClick = { onNavigateToProfile(post.userId) },
                             onOriginalProfileClick = { authorId -> onNavigateToProfile(authorId) },
                             isOwner = post.userId == currentUserId,
-                            onDelete = { viewModel.deletePost(post.id) },
-                            onEdit = { newContent -> viewModel.editPost(post.id, newContent) },
+                            onDelete = { post.id?.let { viewModel.deletePost(it) } },
+                            onEdit = { newContent -> post.id?.let { viewModel.editPost(it, newContent) } },
                             onCommentClick = { 
                                 selectedPostId = post.id
                                 showCommentSheet = true 
@@ -148,7 +141,8 @@ fun FeedScreen(
                                 selectedSharePost = post
                                 showShareSheet = true
                             },
-                            onToggleComments = { viewModel.editPost(post.id, if (post.commentsEnabled) "OFF" else "ON") }
+                            onToggleComments = { post.id?.let { viewModel.editPost(it, if (post.commentsEnabled) "OFF" else "ON") } },
+                            showFeedTag = true
                         )
                     }
                 }
@@ -243,11 +237,12 @@ fun ShareSheetContent(
                         .padding(vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(modifier = Modifier.size(40.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(ProfileIcons.getIcon(friend.profileIcon), contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
+                    com.example.subtrackai.ui.components.ProfileAvatar(
+                        iconName = friend.profileIcon,
+                        avatarUrl = friend.avatarUrl,
+                        modifier = Modifier.size(40.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
                     Text(friend.username, fontWeight = FontWeight.Medium)
                 }
@@ -283,18 +278,18 @@ fun CommentSheetContent(
                 CommentItem(
                     comment = comment,
                     isOwner = comment.userId == currentUserId,
-                    onDelete = { socialViewModel.deleteComment(postId, comment.id) },
+                    onDelete = { comment.id?.let { socialViewModel.deleteComment(postId, it) } },
                     onReply = { replyingTo = comment }
                 )
                 
                 // Render Sub-comments
-                val replies = comments.filter { it.parentCommentId == comment.id }
+                val replies = comments.filter { it.parentCommentId == comment.id && it.parentCommentId != null }
                 replies.forEach { reply ->
                     Box(modifier = Modifier.padding(start = 40.dp)) {
                         CommentItem(
                             comment = reply,
                             isOwner = reply.userId == currentUserId,
-                            onDelete = { socialViewModel.deleteComment(postId, reply.id) },
+                            onDelete = { reply.id?.let { socialViewModel.deleteComment(postId, it) } },
                             onReply = { replyingTo = reply }
                         )
                     }
@@ -340,9 +335,9 @@ fun CommentSheetContent(
                             if (text.isNotBlank()) {
                                 socialViewModel.addComment(
                                     postId = postId, 
-                                    text = text, 
+                                    content = text, 
                                     profileIcon = userProfile?.profileIcon ?: "Person",
-                                    parentId = replyingTo?.id
+                                    parentCommentId = replyingTo?.id
                                 )
                                 text = ""
                                 replyingTo = null
@@ -388,7 +383,7 @@ fun CommentItem(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(comment.authorName, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text(comment.text, fontSize = 14.sp)
+                    Text(comment.content, fontSize = 14.sp)
                 }
             }
             
@@ -518,24 +513,43 @@ fun PostItem(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f).clickable { onProfileClick() }
                 ) {
-                    Surface(
+                    com.example.subtrackai.ui.components.ProfileAvatar(
+                        iconName = "Person", // Placeholder as Post object doesn't store icon name yet
+                        avatarUrl = null,
                         modifier = Modifier.size(40.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                post.authorName.take(1).uppercase(), 
-                                fontWeight = FontWeight.Bold, 
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text(post.authorName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        val timeString = post.timestamp?.let { 
-                            SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(it)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(post.authorName, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            if (showFeedTag) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    color = if (post.profilePost) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (post.profilePost) "Profile" else "Feed",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        color = if (post.profilePost) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
+                        }
+                        val timeString = post.createdAt?.let { 
+                            try {
+                                // Supabase ISO format: 2024-05-23T13:49:24.123+00
+                                val isoFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
+                                val date = isoFormat.parse(it)
+                                date?.let { d ->
+                                    java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault()).format(d)
+                                } ?: "Just now"
+                            } catch (e: Exception) {
+                                "Just now"
+                            }
                         } ?: "Just now"
                         Text(timeString, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                     }
@@ -607,20 +621,12 @@ fun PostItem(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    modifier = Modifier.size(32.dp), 
-                                    shape = CircleShape, 
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            post.originalAuthorName?.take(1)?.uppercase() ?: "?", 
-                                            fontSize = 12.sp, 
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
+                                com.example.subtrackai.ui.components.ProfileAvatar(
+                                    iconName = "Person",
+                                    avatarUrl = null,
+                                    modifier = Modifier.size(32.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
                                     post.originalAuthorName ?: "Unknown", 
@@ -647,8 +653,8 @@ fun PostItem(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
-                val isLiked = post.likedBy.contains(currentUserId)
+                val currentUserId = supabase.auth.currentUserOrNull()?.id
+                val isLiked = post.likedBy.contains(currentUserId ?: "")
                 
                 Row(
                     modifier = Modifier.weight(1f).clickable { onLikeToggle() }.padding(vertical = 8.dp),

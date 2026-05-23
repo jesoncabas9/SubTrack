@@ -55,7 +55,7 @@ fun SubscriptionDetailsSheet(
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(subscription.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(subscription.category, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                Text(subscription.category ?: "Other", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             }
             Text(
                 "${currency}${subscription.price}",
@@ -67,8 +67,8 @@ fun SubscriptionDetailsSheet(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        DetailRow(Icons.Default.CalendarMonth, "Billing Cycle", subscription.billingCycle)
-        DetailRow(Icons.Default.Event, "Next Renewal", subscription.renewalDate)
+        DetailRow(Icons.Default.CalendarMonth, "Billing Cycle", subscription.billingCycle ?: "Monthly")
+        DetailRow(Icons.Default.Event, "Next Renewal", subscription.renewalDate ?: "N/A")
         DetailRow(
             if (subscription.isTrial) Icons.Default.Timer else Icons.Default.CheckCircle, 
             "Type", 

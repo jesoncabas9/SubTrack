@@ -1,21 +1,21 @@
 package com.example.subtrackai.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.subtrackai.model.*
-import com.example.subtrackai.model.Comment
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.Filter
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
+import com.example.subtrackai.supabase
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class SocialViewModel : ViewModel() {
-    private val auth = FirebaseAuth.getInstance()
-    private val firestore = FirebaseFirestore.getInstance()
 
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
     val userProfile = _userProfile.asStateFlow()
@@ -30,190 +30,380 @@ class SocialViewModel : ViewModel() {
     val visitorFriends = _visitorFriends.asStateFlow()
 
     init {
-        auth.addAuthStateListener { firebaseAuth ->
-            val uid = firebaseAuth.currentUser?.uid
-            if (uid != null) {
-                loadCurrentUserProfile(uid)
-                observeFriendRequests(uid)
-                observeFriends(uid)
-            } else {
-                _userProfile.value = null
-                _friends.value = emptyList()
-                _friendRequests.value = emptyList()
+        viewModelScope.launch {
+            supabase.auth.sessionStatus.collect { status ->
+                if (status is SessionStatus.Authenticated) {
+                    val uid = status.session.user?.id ?: return@collect
+                    loadCurrentUserProfile(uid)
+                    observeFriendRequests(uid)
+                    observeFriends(uid)
+                } else {
+                    _userProfile.value = null
+                    _friends.value = emptyList()
+                    _friendRequests.value = emptyList()
+                }
             }
         }
     }
 
     private fun observeFriends(uid: String) {
-        // Query accepted friend requests where current user is involved
-        firestore.collection("friendRequests")
-            .whereEqualTo("status", "accepted")
-            .where(Filter.or(
-                Filter.equalTo("fromId", uid),
-                Filter.equalTo("toId", uid)
-            ))
-            .addSnapshotListener { snapshot, _ ->
-                val requests = snapshot?.toObjects(FriendRequest::class.java) ?: emptyList()
-                val friendIds = requests.map { if (it.fromId == uid) it.toId else it.fromId }.filter { it != uid }
+        viewModelScope.launch {
+            try {
+                val requests = supabase.postgrest["friend_requests"]
+                    .select {
+                        filter {
+                            eq("status", "accepted")
+                            or {
+                                eq("sender_id", uid)
+                                eq("receiver_id", uid)
+                            }
+                        }
+                    }
+                    .decodeList<FriendRequest>()
+                
+                val friendIds = requests.map { if (it.senderId == uid) it.receiverId else it.senderId }.filter { it != uid }
                 
                 if (friendIds.isNotEmpty()) {
-                    firestore.collection("users")
-                        .whereIn("uid", friendIds)
-                        .addSnapshotListener { userSnapshot, _ ->
-                            _friends.value = userSnapshot?.toObjects(UserProfile::class.java) ?: emptyList()
+                    val users = supabase.postgrest["profiles"]
+                        .select {
+                            filter {
+                                isIn("id", friendIds)
+                            }
                         }
+                        .decodeList<UserProfile>()
+                    _friends.value = users
                 } else {
                     _friends.value = emptyList()
                 }
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error observing friends: ${e.message}", e)
             }
+        }
     }
 
     private fun loadCurrentUserProfile(uid: String) {
-        firestore.collection("users").document(uid).addSnapshotListener { snapshot, _ ->
-            _userProfile.value = snapshot?.toObject(UserProfile::class.java)
+        viewModelScope.launch {
+            try {
+                val profile = supabase.postgrest["profiles"]
+                    .select {
+                        filter {
+                            eq("id", uid)
+                        }
+                    }
+                    .decodeSingleOrNull<UserProfile>()
+                
+                if (profile != null) {
+                    _userProfile.value = profile
+                } else {
+                    Log.w("SocialViewModel", "Profile not found for UID: $uid")
+                }
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error loading profile: ${e.message}", e)
+            }
         }
     }
 
     fun toggleOnlineStatus(isOnline: Boolean) {
-        val uid = auth.currentUser?.uid ?: return
-        firestore.collection("users").document(uid).update("showSubscriptions", isOnline)
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["profiles"].update(
+                    buildJsonObject { put("is_online", isOnline) }
+                ) {
+                    filter { eq("id", uid) }
+                }
+                loadCurrentUserProfile(uid)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error toggling status: ${e.message}", e)
+            }
+        }
     }
 
     fun loadVisitorProfile(uid: String, onResult: (UserProfile?) -> Unit) {
-        firestore.collection("users").document(uid).get().addOnSuccessListener {
-            onResult(it.toObject(UserProfile::class.java))
+        viewModelScope.launch {
+            try {
+                val profile = supabase.postgrest["profiles"]
+                    .select {
+                        filter {
+                            eq("id", uid)
+                        }
+                    }
+                    .decodeSingleOrNull<UserProfile>()
+                onResult(profile)
+                observeVisitorFriends(uid)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error loading visitor profile: ${e.message}", e)
+                onResult(null)
+            }
         }
-        observeVisitorFriends(uid)
     }
 
     private fun observeVisitorFriends(uid: String) {
-        firestore.collection("friendRequests")
-            .whereEqualTo("status", "accepted")
-            .where(Filter.or(
-                Filter.equalTo("fromId", uid),
-                Filter.equalTo("toId", uid)
-            ))
-            .addSnapshotListener { snapshot, _ ->
-                val requests = snapshot?.toObjects(FriendRequest::class.java) ?: emptyList()
-                val friendIds = requests.map { if (it.fromId == uid) it.toId else it.fromId }.filter { it != uid }
+        viewModelScope.launch {
+            try {
+                val requests = supabase.postgrest["friend_requests"]
+                    .select {
+                        filter {
+                            eq("status", "accepted")
+                            or {
+                                eq("sender_id", uid)
+                                eq("receiver_id", uid)
+                            }
+                        }
+                    }
+                    .decodeList<FriendRequest>()
+                
+                val friendIds = requests.map { if (it.senderId == uid) it.receiverId else it.senderId }.filter { it != uid }
                 
                 if (friendIds.isNotEmpty()) {
-                    firestore.collection("users")
-                        .whereIn("uid", friendIds)
-                        .get()
-                        .addOnSuccessListener { userSnapshot ->
-                            _visitorFriends.value = userSnapshot?.toObjects(UserProfile::class.java) ?: emptyList()
+                    val users = supabase.postgrest["profiles"]
+                        .select {
+                            filter {
+                                isIn("id", friendIds)
+                            }
                         }
+                        .decodeList<UserProfile>()
+                    _visitorFriends.value = users
                 } else {
                     _visitorFriends.value = emptyList()
                 }
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error observing visitor friends", e)
             }
+        }
     }
 
     private fun observeFriendRequests(uid: String) {
-        firestore.collection("friendRequests")
-            .where(Filter.and(
-                Filter.equalTo("status", "pending"),
-                Filter.or(
-                    Filter.equalTo("fromId", uid),
-                    Filter.equalTo("toId", uid)
-                )
-            ))
-            .addSnapshotListener { snapshot, _ ->
-                _friendRequests.value = snapshot?.toObjects(FriendRequest::class.java) ?: emptyList()
+        viewModelScope.launch {
+            try {
+                val requests = supabase.postgrest["friend_requests"]
+                    .select {
+                        filter {
+                            eq("status", "pending")
+                            or {
+                                eq("sender_id", uid)
+                                eq("receiver_id", uid)
+                            }
+                        }
+                    }
+                    .decodeList<FriendRequest>()
+                _friendRequests.value = requests
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error observing requests", e)
             }
+        }
     }
 
     fun searchUsers(query: String, onResult: (List<UserProfile>) -> Unit) {
-        firestore.collection("users")
-            .whereGreaterThanOrEqualTo("username", query)
-            .whereLessThanOrEqualTo("username", query + "\uf8ff")
-            .get()
-            .addOnSuccessListener {
-                val currentUid = auth.currentUser?.uid
-                val users = it.toObjects(UserProfile::class.java).filter { it.uid != currentUid }
+        viewModelScope.launch {
+            try {
+                val currentUid = supabase.auth.currentUserOrNull()?.id
+                val users = supabase.postgrest["profiles"]
+                    .select {
+                        filter {
+                            ilike("username", "%$query%")
+                        }
+                    }
+                    .decodeList<UserProfile>()
+                    .filter { it.uid != currentUid }
                 onResult(users)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error searching users", e)
+                onResult(emptyList())
             }
+        }
     }
 
     fun sendFriendRequest(toUser: UserProfile) {
-        val currentUser = auth.currentUser ?: return
-        if (toUser.uid == currentUser.uid) return 
+        val user = supabase.auth.currentUserOrNull() ?: return
+        if (toUser.uid == user.id) return 
         
-        // Deterministic ID to avoid duplicates and fix cancellation
-        val requestId = if (currentUser.uid < toUser.uid) "${currentUser.uid}_${toUser.uid}" else "${toUser.uid}_${currentUser.uid}"
-        
-        val request = mapOf(
-            "fromId" to currentUser.uid,
-            "fromName" to (_userProfile.value?.username ?: "Unknown"),
-            "toId" to toUser.uid,
-            "status" to "pending",
-            "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+        val request = FriendRequest(
+            senderId = user.id,
+            senderName = _userProfile.value?.username ?: "Unknown",
+            receiverId = toUser.uid,
+            status = "pending"
         )
-        firestore.collection("friendRequests").document(requestId).set(request)
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["friend_requests"].insert(request)
+                observeFriendRequests(user.id)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error sending request: ${e.message}", e)
+            }
+        }
     }
 
     fun cancelFriendRequest(toUserId: String) {
-        val currentUser = auth.currentUser ?: return
-        val requestId = if (currentUser.uid < toUserId) "${currentUser.uid}_${toUserId}" else "${toUserId}_${currentUser.uid}"
-        firestore.collection("friendRequests").document(requestId).delete()
+        val user = supabase.auth.currentUserOrNull() ?: return
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["friend_requests"].delete {
+                    filter {
+                        eq("sender_id", user.id)
+                        eq("receiver_id", toUserId)
+                    }
+                }
+                observeFriendRequests(user.id)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error canceling request", e)
+            }
+        }
     }
 
     fun unfriendUser(toUserId: String) {
-        val currentUser = auth.currentUser ?: return
-        val requestId = if (currentUser.uid < toUserId) "${currentUser.uid}_${toUserId}" else "${toUserId}_${currentUser.uid}"
-        firestore.collection("friendRequests").document(requestId).delete()
+        val user = supabase.auth.currentUserOrNull() ?: return
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["friend_requests"].delete {
+                    filter {
+                        or {
+                            and {
+                                eq("sender_id", user.id)
+                                eq("receiver_id", toUserId)
+                            }
+                            and {
+                                eq("sender_id", toUserId)
+                                eq("receiver_id", user.id)
+                            }
+                        }
+                    }
+                }
+                observeFriends(user.id)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error unfriending", e)
+            }
+        }
     }
 
     fun acceptFriendRequest(request: FriendRequest) {
-        firestore.collection("friendRequests").document(request.id).update("status", "accepted")
-        // In a real app, we'd add to a friends sub-collection here as well
+        val requestId = request.id ?: return
+        val user = supabase.auth.currentUserOrNull() ?: return
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["friend_requests"].update(
+                    buildJsonObject { put("status", "accepted") }
+                ) {
+                    filter {
+                        eq("id", requestId)
+                    }
+                }
+                observeFriendRequests(user.id)
+                observeFriends(user.id)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error accepting request", e)
+            }
+        }
     }
 
     fun updateCurrency(currency: String) {
-        val uid = auth.currentUser?.uid ?: return
-        firestore.collection("users").document(uid).update("currency", currency)
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["profiles"].update(
+                    buildJsonObject { put("currency", currency) }
+                ) {
+                    filter {
+                        eq("id", uid)
+                    }
+                }
+                loadCurrentUserProfile(uid)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error updating currency", e)
+            }
+        }
     }
 
     fun updateUserStatus(status: String) {
-        val uid = auth.currentUser?.uid ?: return
-        val updates = mapOf(
-            "userStatus" to status,
-            "isOnline" to (status == "Online")
-        )
-        firestore.collection("users").document(uid).update(updates)
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["profiles"].update(
+                    buildJsonObject { 
+                        put("user_status", status)
+                        put("is_online", status == "Online")
+                    }
+                ) {
+                    filter {
+                        eq("id", uid)
+                    }
+                }
+                loadCurrentUserProfile(uid)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error updating status", e)
+            }
+        }
     }
 
-    fun addComment(postId: String, text: String, profileIcon: String, parentId: String? = null) {
-        val user = auth.currentUser ?: return
-        val comment = mapOf(
-            "postId" to postId,
-            "userId" to user.uid,
-            "authorName" to (_userProfile.value?.username ?: "User"),
-            "profileIcon" to profileIcon,
-            "text" to text,
-            "parentCommentId" to parentId,
-            "timestamp" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+    fun addComment(postId: String, content: String, profileIcon: String, parentCommentId: String? = null) {
+        val user = supabase.auth.currentUserOrNull() ?: return
+        val comment = Comment(
+            postId = postId,
+            userId = user.id,
+            authorName = _userProfile.value?.username ?: "User",
+            profileIcon = profileIcon,
+            content = content,
+            parentCommentId = parentCommentId
         )
-        firestore.collection("posts").document(postId).collection("comments").add(comment)
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["comments"].insert(comment)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error adding comment: ${e.message}", e)
+            }
+        }
     }
 
     fun editComment(postId: String, commentId: String, newText: String) {
-        firestore.collection("posts").document(postId).collection("comments").document(commentId).update("text", newText)
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["comments"].update(
+                    buildJsonObject { put("content", newText) }
+                ) {
+                    filter {
+                        eq("id", commentId)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error editing comment", e)
+            }
+        }
     }
 
     fun deleteComment(postId: String, commentId: String) {
-        firestore.collection("posts").document(postId).collection("comments").document(commentId).delete()
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["comments"].delete {
+                    filter {
+                        eq("id", commentId)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error deleting comment", e)
+            }
+        }
     }
 
     fun toggleCommentsEnabled(postId: String, enabled: Boolean) {
-        firestore.collection("posts").document(postId).update("commentsEnabled", enabled)
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["posts"].update(
+                    buildJsonObject { put("comments_enabled", enabled) }
+                ) {
+                    filter {
+                        eq("id", postId)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error toggling comments", e)
+            }
+        }
     }
 
     fun sharePostToProfile(post: Post) {
-        val user = auth.currentUser ?: return
+        val user = supabase.auth.currentUserOrNull() ?: return
         val sharedPost = Post(
-            userId = user.uid,
+            userId = user.id,
             authorName = _userProfile.value?.username ?: "User",
             content = post.content,
             shared = true,
@@ -225,27 +415,52 @@ class SocialViewModel : ViewModel() {
             commentsEnabled = true,
             profilePost = true
         )
-        firestore.collection("posts").add(sharedPost)
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["posts"].insert(sharedPost)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error sharing post", e)
+            }
+        }
     }
 
     fun sharePostInChat(post: Post, receiverId: String) {
-        val senderId = auth.currentUser?.uid ?: return
+        val user = supabase.auth.currentUserOrNull() ?: return
         val message = Message(
-            senderId = senderId,
+            senderId = user.id,
             receiverId = receiverId,
             text = "Shared a post: ${post.content}\nby ${post.authorName}"
         )
-        firestore.collection("messages").add(message)
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["messages"].insert(message)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error sharing post in chat", e)
+            }
+        }
     }
 
     fun updateProfile(fullName: String, username: String, bio: String, icon: String) {
-        val uid = auth.currentUser?.uid ?: return
-        val updates = mapOf(
-            "fullName" to fullName,
-            "username" to username,
-            "bio" to bio,
-            "profileIcon" to icon
-        )
-        firestore.collection("users").document(uid).update(updates)
+        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        viewModelScope.launch {
+            try {
+                supabase.postgrest["profiles"].update(
+                    buildJsonObject { 
+                        put("full_name", fullName)
+                        put("username", username)
+                        put("bio", bio)
+                        put("profile_icon", icon)
+                    }
+                ) {
+                    filter {
+                        eq("id", uid)
+                    }
+                }
+                loadCurrentUserProfile(uid)
+            } catch (e: Exception) {
+                Log.e("SocialViewModel", "Error updating profile", e)
+            }
+        }
     }
 }
+

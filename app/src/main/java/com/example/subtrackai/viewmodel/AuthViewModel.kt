@@ -1,131 +1,206 @@
 package com.example.subtrackai.viewmodel
 
 import android.content.Context
+import android.util.Log
+import androidx.credentials.CredentialManager
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.GetCredentialResponse
+import androidx.credentials.exceptions.GetCredentialException
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.subtrackai.model.UserProfile
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.subtrackai.supabase
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.IDToken
+import io.github.jan.supabase.auth.providers.Google
+import io.github.jan.supabase.auth.status.SessionStatus
+import io.github.jan.supabase.auth.user.UserInfo
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import java.security.MessageDigest
+import java.util.UUID
 
 class AuthViewModel : ViewModel() {
-    private val auth = FirebaseAuth.getInstance()
-    private val firestore = FirebaseFirestore.getInstance()
     
-    private val _currentUser = MutableStateFlow<FirebaseUser?>(auth.currentUser)
-    val currentUser: StateFlow<FirebaseUser?> = _currentUser.asStateFlow()
+    val currentUser: StateFlow<UserInfo?> = supabase.auth.sessionStatus.map { status ->
+        if (status is SessionStatus.Authenticated) status.session.user else null
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), supabase.auth.currentUserOrNull())
 
     private val _authState = MutableStateFlow<AuthState>(AuthState.Idle)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
-    // Preferences for "Keep me signed in"
-    private var sharedPrefsName = "subtrack_prefs"
+    // New state to track if the profile is complete (has username)
+    private val _isProfileComplete = MutableStateFlow<Boolean?>(null)
+    val isProfileComplete: StateFlow<Boolean?> = _isProfileComplete.asStateFlow()
 
-    fun login(email: String, pass: String, keepSignedIn: Boolean, context: Context) {
-        _authState.value = AuthState.Loading
-        auth.signInWithEmailAndPassword(email, pass)
-            .addOnSuccessListener {
-                val user = auth.currentUser
-                if (user != null && !user.isEmailVerified) {
-                    _authState.value = AuthState.Error("Please verify your email address.")
-                    auth.signOut()
-                    return@addOnSuccessListener
+    private val serverClientId = "50643151271-f1889snmi1jp7irq4fpqc8ndok5nnfd8.apps.googleusercontent.com"
+
+    init {
+        // Automatically check profile whenever user signs in or app starts with session
+        viewModelScope.launch {
+            currentUser.collect { user ->
+                if (user != null) {
+                    checkProfileCompletion()
+                } else {
+                    _isProfileComplete.value = null
                 }
-                
-                if (keepSignedIn) {
-                    val prefs = context.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("keep_signed_in", true).apply()
-                }
-                // Update user state AFTER prefs are set
-                _currentUser.value = auth.currentUser
-                _authState.value = AuthState.Success("Login Successful")
             }
-            .addOnFailureListener {
-                _authState.value = AuthState.Error(it.message ?: "Login Failed")
-            }
+        }
     }
 
-    fun signUp(email: String, pass: String, fullName: String, username: String, profileIcon: String, currency: String = "$") {
-        _authState.value = AuthState.SignUpLoading
-        auth.createUserWithEmailAndPassword(email, pass)
-            .addOnSuccessListener { result ->
-                val user = result.user
-                val uid = user?.uid ?: return@addOnSuccessListener
+    fun signInWithGoogle(context: Context) {
+        _authState.value = AuthState.Loading
+        val credentialManager = CredentialManager.create(context)
+        
+        val rawNonce = UUID.randomUUID().toString()
+        val hashedNonce = hashNonce(rawNonce)
+
+        val googleIdOption: GetGoogleIdOption = GetGoogleIdOption.Builder()
+            .setFilterByAuthorizedAccounts(false)
+            .setServerClientId(serverClientId)
+            .setAutoSelectEnabled(false)
+            .setNonce(hashedNonce)
+            .build()
+
+        val request: GetCredentialRequest = GetCredentialRequest.Builder()
+            .addCredentialOption(googleIdOption)
+            .build()
+
+        viewModelScope.launch {
+            try {
+                val result = credentialManager.getCredential(context, request)
+                handleGoogleSignInResult(result)
+            } catch (e: GetCredentialException) {
+                Log.w("AuthViewModel", "Modern API failed: ${e.message}")
+                _authState.value = AuthState.TriggerLegacySignIn
+            } catch (e: Exception) {
+                Log.e("AuthViewModel", "Sign-In Error", e)
+                _authState.value = AuthState.Error(e.message ?: "Google Sign-In Failed")
+            }
+        }
+    }
+
+    private fun hashNonce(nonce: String): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(nonce.toByteArray())
+        return digest.fold("") { str, it -> str + "%02x".format(it) }
+    }
+
+    private suspend fun handleGoogleSignInResult(result: GetCredentialResponse) {
+        val credential = result.credential
+        if (credential is GoogleIdTokenCredential) {
+            signInToSupabaseWithIdToken(credential.idToken)
+        } else {
+            _authState.value = AuthState.Error("Unexpected credential type")
+        }
+    }
+
+    fun handleLegacyGoogleSignInResult(account: GoogleSignInAccount?) {
+        val idToken = account?.idToken
+        if (idToken != null) {
+            _authState.value = AuthState.Loading
+            viewModelScope.launch {
+                signInToSupabaseWithIdToken(idToken)
+            }
+        } else {
+            _authState.value = AuthState.Error("Failed to get ID Token from Google")
+        }
+    }
+
+    private suspend fun signInToSupabaseWithIdToken(idTokenStr: String) {
+        try {
+            supabase.auth.signInWith(IDToken) {
+                idToken = idTokenStr
+                provider = Google
+            }
+            // Transition happens via the observer in init {}
+        } catch (e: Exception) {
+            _authState.value = AuthState.Error(e.message ?: "Supabase Auth Failed")
+        }
+    }
+
+    fun checkProfileCompletion() {
+        viewModelScope.launch {
+            try {
+                val user = supabase.auth.currentUserOrNull() ?: return@launch
+                
+                val profile = supabase.postgrest["profiles"]
+                    .select {
+                        filter { eq("id", user.id) }
+                    }
+                    .decodeSingleOrNull<UserProfile>()
+
+                if (profile != null && !profile.username.isNullOrBlank()) {
+                    _isProfileComplete.value = true
+                    _authState.value = AuthState.Success("Welcome back!")
+                } else {
+                    _isProfileComplete.value = false
+                    _authState.value = AuthState.NeedsProfileCompletion
+                }
+            } catch (e: Exception) {
+                Log.e("AuthViewModel", "Profile check failed", e)
+                _isProfileComplete.value = false
+                _authState.value = AuthState.NeedsProfileCompletion
+            }
+        }
+    }
+
+    fun completeProfile(username: String, fullName: String, profileIcon: String, currency: String) {
+        val user = supabase.auth.currentUserOrNull() ?: return
+        _authState.value = AuthState.Loading
+        viewModelScope.launch {
+            try {
+                // Get Google avatar if available
+                val googleAvatar = user.userMetadata?.get("avatar_url")?.toString()?.removeSurrounding("\"")
                 
                 val userData = UserProfile(
-                    uid = uid,
+                    uid = user.id,
                     fullName = fullName,
                     username = username,
-                    email = email,
+                    email = user.email ?: "",
                     profileIcon = profileIcon,
-                    bio = "New to SubTrack!",
-                    showSubscriptions = true,
-                    friendsCount = 0,
+                    avatarUrl = googleAvatar,
                     currency = currency
                 )
-                
-                // Update Firebase User Profile
-                val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
-                    displayName = username
-                }
-                user.updateProfile(profileUpdates)
+                supabase.postgrest["profiles"].upsert(userData)
+                _isProfileComplete.value = true
+                _authState.value = AuthState.Success("Profile Setup Complete!")
+            } catch (e: Exception) {
+                _authState.value = AuthState.Error(e.message ?: "Failed to save profile")
+            }
+        }
+    }
 
-                // Save additional user data to Firestore
-                firestore.collection("users").document(uid).set(userData)
-                    .addOnSuccessListener {
-                        user.sendEmailVerification()
-                            .addOnSuccessListener {
-                                auth.signOut()
-                                _currentUser.value = null
-                                _authState.value = AuthState.SignUpSuccess
-                            }
-                            .addOnFailureListener {
-                                _authState.value = AuthState.Error("Failed to send verification email: ${it.message}")
-                            }
-                    }
-                    .addOnFailureListener {
-                        _authState.value = AuthState.Error("Sign up worked but failed to save profile: ${it.message}")
-                    }
-            }
-            .addOnFailureListener {
-                _authState.value = AuthState.Error(it.message ?: "Sign Up Failed")
-            }
+    suspend fun checkUsernameAvailable(username: String): Boolean {
+        return try {
+            val exists = supabase.postgrest.rpc("check_username_exists", buildJsonObject {
+                put("username_to_check", username)
+            }).decodeAs<Boolean>()
+            !exists
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun signOut(context: Context) {
-        _authState.value = AuthState.Loading // 1. Set loading immediately
-        
-        // Use viewModelScope to ensure we have a coroutine context
+        _authState.value = AuthState.Loading
         viewModelScope.launch {
-            delay(800) // Ensure the loading screen is visible
-            auth.signOut()
-            _currentUser.value = null
-            val prefs = context.getSharedPreferences(sharedPrefsName, Context.MODE_PRIVATE)
-            prefs.edit().putBoolean("keep_signed_in", false).apply()
-            _authState.value = AuthState.Idle
-        }
-    }
-
-    fun nukeUsersCollection() {
-        firestore.collection("users").get().addOnSuccessListener { snapshot ->
-            for (doc in snapshot.documents) {
-                // Delete user's sub-collections first if needed, but for a simple nuke this is okay
-                doc.reference.delete()
-            }
-        }
-        firestore.collection("friendRequests").get().addOnSuccessListener { snapshot ->
-            for (doc in snapshot.documents) {
-                doc.reference.delete()
-            }
-        }
-        firestore.collection("posts").get().addOnSuccessListener { snapshot ->
-            for (doc in snapshot.documents) {
-                doc.reference.delete()
+            try {
+                delay(800)
+                supabase.auth.signOut()
+                _isProfileComplete.value = null
+                val prefs = context.getSharedPreferences("subtrack_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putBoolean("keep_signed_in", false).apply()
+                _authState.value = AuthState.Idle
+            } catch (e: Exception) {
+                _authState.value = AuthState.Idle
             }
         }
     }
@@ -137,9 +212,10 @@ class AuthViewModel : ViewModel() {
     sealed class AuthState {
         object Idle : AuthState()
         object Loading : AuthState()
-        object SignUpLoading : AuthState()
+        object CheckingProfile : AuthState()
+        object TriggerLegacySignIn : AuthState()
+        object NeedsProfileCompletion : AuthState()
         data class Success(val message: String) : AuthState()
-        object SignUpSuccess : AuthState()
         data class Error(val message: String) : AuthState()
     }
 }

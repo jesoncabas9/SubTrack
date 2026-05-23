@@ -249,7 +249,7 @@ fun ModernBar(sub: Subscription, maxPrice: Double) {
 
 @Composable
 fun CategoryBreakdown(subscriptions: List<Subscription>) {
-    val categoryTotals = subscriptions.groupBy { it.category }
+    val categoryTotals = subscriptions.groupBy { it.category ?: "Other" }
         .mapValues { it.value.sumOf { s -> s.price } }
         .toList()
         .sortedByDescending { it.second }

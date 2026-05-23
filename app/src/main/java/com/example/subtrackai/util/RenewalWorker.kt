@@ -4,13 +4,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.example.subtrackai.R
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.tasks.await
+import com.example.subtrackai.model.Subscription
+import com.example.subtrackai.supabase
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.postgrest.postgrest
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -20,38 +21,44 @@ class RenewalWorker(
 ) : CoroutineWorker(context, workerParams) {
 
     override suspend fun doWork(): Result {
-        val auth = FirebaseAuth.getInstance()
-        val firestore = FirebaseFirestore.getInstance()
-        val uid = auth.currentUser?.uid ?: return Result.success()
+        val user = supabase.auth.currentUserOrNull() ?: return Result.success()
+        val uid = user.id
 
         try {
-            val snapshot = firestore.collection("users")
-                .document(uid)
-                .collection("subscriptions")
-                .get()
-                .await()
+            val subs = supabase.postgrest["subscriptions"]
+                .select {
+                    filter {
+                        eq("user_id", uid)
+                    }
+                }
+                .decodeList<Subscription>()
 
             val today = Calendar.getInstance()
             val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
 
-            snapshot.documents.forEach { doc ->
-                val name = doc.getString("name") ?: ""
-                val renewalDateStr = doc.getString("renewalDate") ?: ""
+            subs.forEach { sub ->
+                val name = sub.name
+                val renewalDateStr = sub.renewalDate ?: ""
                 
                 if (renewalDateStr.isNotBlank()) {
-                    val renewalDate = sdf.parse(renewalDateStr)
-                    if (renewalDate != null) {
-                        val diff = renewalDate.time - today.timeInMillis
-                        val daysUntil = diff / (1000 * 60 * 60 * 24)
+                    try {
+                        val renewalDate = sdf.parse(renewalDateStr)
+                        if (renewalDate != null) {
+                            val diff = renewalDate.time - today.timeInMillis
+                            val daysUntil = diff / (1000 * 60 * 60 * 24)
 
-                        if (daysUntil in 0..2) {
-                            sendNotification(name, renewalDateStr)
+                            if (daysUntil in 0..2) {
+                                sendNotification(name, renewalDateStr)
+                            }
                         }
+                    } catch (e: Exception) {
+                        Log.e("RenewalWorker", "Error parsing date: $renewalDateStr", e)
                     }
                 }
             }
             return Result.success()
         } catch (e: Exception) {
+            Log.e("RenewalWorker", "Error in doWork", e)
             return Result.retry()
         }
     }

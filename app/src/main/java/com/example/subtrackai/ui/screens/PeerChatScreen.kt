@@ -174,7 +174,7 @@ fun PeerChatScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
-                    items(messages, key = { it.id }) { message ->
+                    items(messages, key = { it.id ?: java.util.UUID.randomUUID().toString() }) { message ->
                         AnimatedVisibility(
                             visible = true,
                             enter = slideInVertically(
@@ -211,20 +211,12 @@ fun UserListItem(user: UserProfile, onClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box {
-                Surface(
-                    modifier = Modifier.size(48.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            ProfileIcons.getIcon(user.profileIcon),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
+                com.example.subtrackai.ui.components.ProfileAvatar(
+                iconName = user.profileIcon,
+                avatarUrl = user.avatarUrl,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
                 // Status indicator
                 Box(
                     modifier = Modifier
@@ -261,8 +253,16 @@ fun UserListItem(user: UserProfile, onClick: () -> Unit) {
 
 @Composable
 fun ChatBubble(message: Message, isMe: Boolean) {
-    val timeString = message.timestamp?.let { 
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
+    val timeString = message.createdAt?.let { 
+        try {
+            val isoFormat = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.getDefault())
+            val date = isoFormat.parse(it)
+            date?.let { d ->
+                java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(d)
+            } ?: ""
+        } catch (e: Exception) {
+            ""
+        }
     } ?: ""
 
     Column(

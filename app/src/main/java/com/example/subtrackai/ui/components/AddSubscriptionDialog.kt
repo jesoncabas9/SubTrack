@@ -49,7 +49,9 @@ fun AddSubscriptionDialog(
                 TextButton(onClick = {
                     val selectedDate = datePickerState.selectedDateMillis
                     if (selectedDate != null) {
-                        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }
                         renewalDate = formatter.format(Date(selectedDate))
                     }
                     showDatePicker = false
@@ -131,27 +133,27 @@ fun AddSubscriptionDialog(
                     Text("Yearly")
                 }
 
-                OutlinedTextField(
-                    value = renewalDate,
-                    onValueChange = { /* Read-only via picker */ },
-                    label = { Text(if (isTrial) "Trial End Date" else "Renewal Date") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showDatePicker = true },
-                    readOnly = true,
-                    enabled = false, // Workaround to ensure click goes to field modifier or decoration
-                    trailingIcon = {
-                        IconButton(onClick = { showDatePicker = true }) {
-                            Icon(Icons.Default.DateRange, contentDescription = "Select Date")
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = renewalDate,
+                        onValueChange = { /* Read-only via picker */ },
+                        label = { Text(if (isTrial) "Trial End Date" else "Renewal Date") },
+                        modifier = Modifier.fillMaxWidth(),
+                        readOnly = true,
+                        enabled = true,
+                        trailingIcon = {
+                            IconButton(onClick = { showDatePicker = true }) {
+                                Icon(Icons.Filled.DateRange, contentDescription = "Select Date")
+                            }
                         }
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                        disabledBorderColor = MaterialTheme.colorScheme.outline,
-                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                )
+                    // Overlay Box to capture clicks on the entire field
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .clickable { showDatePicker = true }
+                    )
+                }
             }
         },
         confirmButton = {

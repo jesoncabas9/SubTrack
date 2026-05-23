@@ -3,11 +3,9 @@ package com.example.subtrackai.navigation
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,7 +15,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,6 +22,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
+import androidx.navigation.navArgument
+import androidx.navigation.NavType
 import com.example.subtrackai.R
 import com.example.subtrackai.ui.screens.*
 import com.example.subtrackai.ui.theme.DeepPurple
@@ -48,7 +47,9 @@ fun AppNavigation() {
     val settingsViewModel: SettingsViewModel = viewModel()
     val socialViewModel: SocialViewModel = viewModel()
     val peerChatViewModel: PeerChatViewModel = viewModel()
+    
     val currentUser by authViewModel.currentUser.collectAsState()
+    val isProfileComplete by authViewModel.isProfileComplete.collectAsState()
     val isDarkMode by settingsViewModel.isDarkMode.collectAsState()
     
     // Connectivity Monitoring
@@ -57,35 +58,19 @@ fun AppNavigation() {
     
     // Theme Management
     var showInitialization by remember { mutableStateOf(true) }
-    
     val authState by authViewModel.authState.collectAsState()
 
-    // NEW: Theme Animation State
+    // Theme Animation State
     var animateTheme by remember { mutableStateOf(false) }
     var targetThemeState by remember { mutableStateOf(isDarkMode) }
 
     LaunchedEffect(isDarkMode) {
         if (isDarkMode != targetThemeState) {
             animateTheme = true
-            // Wait for rise to cover screen
             kotlinx.coroutines.delay(800) 
             targetThemeState = isDarkMode 
-            // Briefly hold then hide
             kotlinx.coroutines.delay(200)
             animateTheme = false
-        }
-    }
-
-    var lastBackPressTime by remember { mutableLongStateOf(0L) }
-    val safeBack = {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime > 500) {
-            if (navController.previousBackStackEntry != null) {
-                navController.popBackStack()
-            } else {
-                (context as? android.app.Activity)?.finish()
-            }
-            lastBackPressTime = currentTime
         }
     }
 
@@ -95,20 +80,28 @@ fun AppNavigation() {
                 InitializationScreen(onInitializationComplete = { showInitialization = false })
             } else if (status != com.example.subtrackai.util.ConnectivityObserver.Status.Available) {
                 NoConnectionScreen()
-            } else if (authState is AuthViewModel.AuthState.Loading) {
+            } else if (authState is AuthViewModel.AuthState.Loading || authState is AuthViewModel.AuthState.CheckingProfile) {
                 Box(modifier = Modifier.fillMaxSize().background(DeepPurple)) {
-                    LoadingScreen(
-                        message = if (authState is AuthViewModel.AuthState.SignUpLoading) 
-                            "Signing Up...\n\nPlease check your email for a verification link." 
-                            else if (currentUser != null) "Signing out..." else "Signing in..."
-                    )
+                    LoadingScreen(message = "Verifying Identity...")
                 }
             } else {
-                NavHost(navController = navController, startDestination = if (currentUser != null) "main" else "login") {
+                NavHost(
+                    navController = navController, 
+                    startDestination = when {
+                        currentUser == null -> "login"
+                        isProfileComplete == true -> "main"
+                        isProfileComplete == false -> "complete_profile"
+                        else -> "login" // Default to login while checking
+                    }
+                ) {
                     composable("login") {
                         LoginScreen(
                             viewModel = authViewModel,
-                            onNavigateToSignUp = { navController.navigate("signup") },
+                            onNavigateToCompleteProfile = { 
+                                navController.navigate("complete_profile") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            },
                             onLoginSuccess = { 
                                 navController.navigate("main") {
                                     popUpTo("login") { inclusive = true }
@@ -116,17 +109,25 @@ fun AppNavigation() {
                             }
                         )
                     }
-                    
-                    composable("signup") {
-                        SignUpScreen(
+
+                    composable("complete_profile") {
+                        CompleteProfileScreen(
                             viewModel = authViewModel,
-                            onNavigateToLogin = { navController.navigate("login") }
+                            onComplete = {
+                                navController.navigate("main") {
+                                    popUpTo("complete_profile") { inclusive = true }
+                                }
+                            }
                         )
                     }
 
                     composable("main") {
                         if (currentUser == null) {
                             navController.navigate("login") {
+                                popUpTo("main") { inclusive = true }
+                            }
+                        } else if (isProfileComplete == false) {
+                            navController.navigate("complete_profile") {
                                 popUpTo("main") { inclusive = true }
                             }
                         } else {
@@ -151,7 +152,7 @@ fun AppNavigation() {
                             feedViewModel = feedViewModel,
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = safeBack
+                            onBack = { navController.popBackStack() }
                         )
                     }
 
@@ -159,7 +160,7 @@ fun AppNavigation() {
                         ProfileScreen(
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = safeBack,
+                            onBack = { navController.popBackStack() },
                             onNavigateToCreatePost = { navController.navigate("create_post_profile") },
                             onNavigateToProfile = { userId -> navController.navigate("profile_view/$userId") }
                         )
@@ -170,8 +171,8 @@ fun AppNavigation() {
                         ProfileScreen(
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = safeBack,
-                            onNavigateToCreatePost = {}, // Visitors can't post to someone else's profile
+                            onBack = { navController.popBackStack() },
+                            onNavigateToCreatePost = {}, 
                             onNavigateToProfile = { otherId -> navController.navigate("profile_view/$otherId") },
                             visitorUserId = userId
                         )
@@ -183,7 +184,7 @@ fun AppNavigation() {
                             feedViewModel = feedViewModel,
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
-                            onBack = safeBack,
+                            onBack = { navController.popBackStack() },
                             profilePost = true
                         )
                     }
@@ -195,7 +196,7 @@ fun AppNavigation() {
                         ChatScreen(
                             viewModel = chatViewModel,
                             subscriptions = subs,
-                            onBack = safeBack
+                            onBack = { navController.popBackStack() }
                         )
                     }
 
@@ -203,18 +204,18 @@ fun AppNavigation() {
                         val dashboardViewModel: DashboardViewModel = viewModel()
                         AnalyticsScreen(
                             viewModel = dashboardViewModel,
-                            onBack = safeBack,
+                            onBack = { navController.popBackStack() },
                             isDarkMode = targetThemeState
                         )
                     }
                 }
             }
 
-            // Theme Fall Animation Overlay (Top to Bottom)
+            // Theme Fall Animation Overlay
             AnimatedVisibility(
                 visible = animateTheme,
                 enter = slideInVertically(
-                    initialOffsetY = { -it }, // Start above screen
+                    initialOffsetY = { -it }, 
                     animationSpec = tween(800, easing = LinearOutSlowInEasing)
                 ),
                 exit = fadeOut(animationSpec = tween(300))
@@ -259,20 +260,15 @@ fun MainScreen(
     var isChatActive by remember { mutableStateOf(false) }
     var chatUser by remember { mutableStateOf<com.example.subtrackai.model.UserProfile?>(null) }
     var showChatMenu by remember { mutableStateOf(false) }
-    var lastBackPressTime by remember { mutableLongStateOf(0L) }
-
+    
     val safeBack = {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime > 600) { // Slightly longer debounce for safety
-            if (isChatActive) {
-                isChatActive = false
-                chatUser = null
-            } else if (navController.previousBackStackEntry != null) {
-                navController.popBackStack()
-            } else {
-                (context as? android.app.Activity)?.finish()
-            }
-            lastBackPressTime = currentTime
+        if (isChatActive) {
+            isChatActive = false
+            chatUser = null
+        } else if (navController.previousBackStackEntry != null) {
+            navController.popBackStack()
+        } else {
+            (context as? android.app.Activity)?.finish()
         }
     }
 
@@ -284,7 +280,6 @@ fun MainScreen(
         BottomNavItem.Settings
     )
 
-    // Security: Handle back button to prevent "White Screen" bug
     androidx.activity.compose.BackHandler(enabled = true) {
         safeBack()
     }
@@ -295,32 +290,12 @@ fun MainScreen(
                 CenterAlignedTopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box {
-                                Surface(
-                                    modifier = Modifier.size(36.dp),
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            com.example.subtrackai.util.ProfileIcons.getIcon(chatUser?.profileIcon),
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .size(10.dp)
-                                        .align(Alignment.BottomEnd)
-                                        .background(
-                                            if (chatUser?.isOnline == true) Color(0xFF4CAF50) else Color.Gray,
-                                            CircleShape
-                                        )
-                                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
-                                )
-                            }
+                            com.example.subtrackai.ui.components.ProfileAvatar(
+                                iconName = chatUser?.profileIcon,
+                                avatarUrl = chatUser?.avatarUrl,
+                                modifier = Modifier.size(36.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
@@ -337,7 +312,7 @@ fun MainScreen(
                         }
                     },
                     navigationIcon = {
-                        IconButton(onClick = safeBack) {
+                        IconButton(onClick = { safeBack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     },
@@ -355,22 +330,9 @@ fun MainScreen(
                                     },
                                     leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) }
                                 )
-                                DropdownMenuItem(
-                                    text = { Text("Unfriend", color = MaterialTheme.colorScheme.error) },
-                                    onClick = {
-                                        chatUser?.uid?.let { socialViewModel.unfriendUser(it) }
-                                        isChatActive = false
-                                        chatUser = null
-                                        showChatMenu = false
-                                    },
-                                    leadingIcon = { Icon(Icons.Default.PersonRemove, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                                )
                             }
                         }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    }
                 )
             } else {
                 TopAppBar(
@@ -386,21 +348,8 @@ fun MainScreen(
                         Text(
                             titleText,
                             fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = if (currentDestination?.route == BottomNavItem.Dashboard.route) 
-                                Modifier.padding(start = 32.dp) else Modifier
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                    },
-                    navigationIcon = {
-                        if (currentDestination?.route == BottomNavItem.Dashboard.route) {
-                            Row(modifier = Modifier.padding(start = 16.dp)) {
-                                androidx.compose.foundation.Image(
-                                    painter = painterResource(id = R.drawable.subtrack_logo),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                        }
                     },
                     actions = {
                         if (currentDestination?.route == BottomNavItem.Dashboard.route) {
@@ -408,29 +357,10 @@ fun MainScreen(
                                 Icon(Icons.Default.BarChart, contentDescription = "Analytics")
                             }
                         }
-
-                        if (currentDestination?.route == BottomNavItem.Dashboard.route || currentDestination?.route == BottomNavItem.Feed.route) {
-                            IconButton(onClick = onNavigateToProfile) {
-                                Surface(
-                                    modifier = Modifier.size(32.dp),
-                                    shape = CircleShape,
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            com.example.subtrackai.util.ProfileIcons.getIcon(userProfile?.profileIcon),
-                                            contentDescription = "Profile",
-                                            modifier = Modifier.size(20.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            }
+                        IconButton(onClick = onNavigateToProfile) {
+                            Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
                         }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    }
                 )
             }
         },

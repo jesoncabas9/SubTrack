@@ -57,15 +57,12 @@ fun SettingsScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
+                    com.example.subtrackai.ui.components.ProfileAvatar(
+                        iconName = userProfile?.profileIcon,
+                        avatarUrl = userProfile?.avatarUrl,
                         modifier = Modifier.size(60.dp),
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(ProfileIcons.getIcon(userProfile?.profileIcon), contentDescription = null, modifier = Modifier.size(32.dp))
-                        }
-                    }
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(userProfile?.fullName ?: "User", fontWeight = FontWeight.Bold, fontSize = 18.sp)
