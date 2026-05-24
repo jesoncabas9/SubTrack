@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.subtrackai.model.Message
+import com.example.subtrackai.model.MessageInsert
 import com.example.subtrackai.supabase
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
@@ -13,11 +14,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
 
 class PeerChatViewModel : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -25,6 +31,40 @@ class PeerChatViewModel : ViewModel() {
                 if (status !is SessionStatus.Authenticated) {
                     _messages.value = emptyList()
                 }
+            }
+        }
+    }
+
+    fun refreshChat(otherUserId: String) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                val user = supabase.auth.currentUserOrNull() ?: return@launch
+                val currentUserId = user.id
+                
+                val messagesList = supabase.postgrest["messages"]
+                    .select {
+                        filter {
+                            or {
+                                and {
+                                    eq("sender_id", currentUserId)
+                                    eq("receiver_id", otherUserId)
+                                }
+                                and {
+                                    eq("sender_id", otherUserId)
+                                    eq("receiver_id", currentUserId)
+                                }
+                            }
+                        }
+                        order("created_at", io.github.jan.supabase.postgrest.query.Order.ASCENDING)
+                    }
+                    .decodeList<com.example.subtrackai.model.Message>()
+                
+                _messages.value = messagesList
+            } catch (e: Exception) {
+                android.util.Log.e("PeerChatViewModel", "Error refreshing chat", e)
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }
@@ -61,14 +101,14 @@ class PeerChatViewModel : ViewModel() {
 
     fun sendMessage(receiverId: String, text: String) {
         val user = supabase.auth.currentUserOrNull() ?: return
-        val message = Message(
+        val message = MessageInsert(
             senderId = user.id,
             receiverId = receiverId,
             text = text
         )
         viewModelScope.launch {
             try {
-                supabase.postgrest["messages"].insert(message)
+                supabase.postgrest["messages"].insert(Json.encodeToJsonElement(message))
                 startChat(receiverId) 
             } catch (e: Exception) {
                 Log.e("PeerChatViewModel", "Error sending message: ${e.message}", e)

@@ -68,12 +68,13 @@ fun SubscriptionDetailsSheet(
         Spacer(modifier = Modifier.height(32.dp))
 
         DetailRow(Icons.Default.CalendarMonth, "Billing Cycle", subscription.billingCycle ?: "Monthly")
-        DetailRow(Icons.Default.Event, "Next Renewal", subscription.renewalDate ?: "N/A")
+        DetailRow(Icons.Default.Event, "Next Renewal", subscription.renewalDate?.takeIf { it.isNotBlank() } ?: "Not set")
         DetailRow(
             if (subscription.isTrial) Icons.Default.Timer else Icons.Default.CheckCircle, 
             "Type", 
             if (subscription.isTrial) "Free Trial" else "Paid Subscription"
         )
+        DetailRow(Icons.Default.Notifications, "Reminder", "${subscription.reminderDays} days before")
 
         Spacer(modifier = Modifier.height(40.dp))
 

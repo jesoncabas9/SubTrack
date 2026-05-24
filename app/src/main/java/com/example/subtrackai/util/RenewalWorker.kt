@@ -47,7 +47,7 @@ class RenewalWorker(
                             val diff = renewalDate.time - today.timeInMillis
                             val daysUntil = diff / (1000 * 60 * 60 * 24)
 
-                            if (daysUntil in 0..2) {
+                            if (daysUntil in 0..sub.reminderDays.toLong()) {
                                 sendNotification(name, renewalDateStr)
                             }
                         }

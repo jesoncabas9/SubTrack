@@ -42,6 +42,9 @@ class DashboardViewModel : ViewModel() {
     private val _upcomingTrialEndings = MutableStateFlow<List<Subscription>>(emptyList())
     val upcomingTrialEndings: StateFlow<List<Subscription>> = _upcomingTrialEndings.asStateFlow()
 
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
+
     init {
         viewModelScope.launch {
             supabase.auth.sessionStatus.collect { status ->
@@ -50,6 +53,29 @@ class DashboardViewModel : ViewModel() {
                 } else {
                     _subscriptions.value = emptyList()
                 }
+            }
+        }
+    }
+
+    fun refreshSubscriptions() {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                val user = supabase.auth.currentUserOrNull() ?: return@launch
+                val result = supabase.postgrest["subscriptions"]
+                    .select {
+                        filter {
+                            eq("user_id", user.id)
+                        }
+                    }
+                    .decodeList<Subscription>()
+                _subscriptions.value = result
+                calculateInsights(result)
+                calculateTotalMonthlySpend(result)
+            } catch (e: Exception) {
+                Log.e("DashboardViewModel", "Error refreshing subscriptions", e)
+            } finally {
+                _isRefreshing.value = false
             }
         }
     }
@@ -157,7 +183,7 @@ class DashboardViewModel : ViewModel() {
         _selectedCategory.value = category
     }
 
-    fun addSubscription(name: String, price: Double, billingCycle: String, renewalDate: String, category: String, isTrial: Boolean = false) {
+    fun addSubscription(name: String, price: Double, billingCycle: String, renewalDate: String, category: String, isTrial: Boolean = false, reminderDays: Int = 3) {
         val user = supabase.auth.currentUserOrNull() ?: return
         val newSub = Subscription(
             userId = user.id,
@@ -166,7 +192,8 @@ class DashboardViewModel : ViewModel() {
             billingCycle = billingCycle,
             renewalDate = renewalDate,
             category = category,
-            isTrial = isTrial
+            isTrial = isTrial,
+            reminderDays = reminderDays
         )
         viewModelScope.launch {
             try {
@@ -178,7 +205,7 @@ class DashboardViewModel : ViewModel() {
         }
     }
 
-    fun updateSubscription(id: String, name: String, price: Double, billingCycle: String, renewalDate: String, category: String, isTrial: Boolean = false) {
+    fun updateSubscription(id: String, name: String, price: Double, billingCycle: String, renewalDate: String, category: String, isTrial: Boolean = false, reminderDays: Int = 3) {
         val user = supabase.auth.currentUserOrNull() ?: return
         val updatedSub = Subscription(
             id = id,
@@ -188,7 +215,8 @@ class DashboardViewModel : ViewModel() {
             billingCycle = billingCycle,
             renewalDate = renewalDate,
             category = category,
-            isTrial = isTrial
+            isTrial = isTrial,
+            reminderDays = reminderDays
         )
         viewModelScope.launch {
             try {

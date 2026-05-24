@@ -11,9 +11,13 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.subtrackai.navigation.AppNavigation
 import com.example.subtrackai.util.RenewalWorker
+import com.example.subtrackai.model.ProfileUpdate
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.filter.PostgrestFilterBuilder
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
@@ -42,12 +46,8 @@ class MainActivity : ComponentActivity() {
             val uid = user.id
             lifecycleScope.launch {
                 try {
-                    supabase.postgrest["profiles"].update(
-                        mapOf(
-                            "is_online" to true,
-                            "user_status" to "Online"
-                        )
-                    ) {
+                    val data = ProfileUpdate(isOnline = true, userStatus = "Online")
+                    supabase.postgrest["profiles"].update(Json.encodeToJsonElement(data)) {
                         filter {
                             eq("id", uid)
                         }
@@ -66,12 +66,8 @@ class MainActivity : ComponentActivity() {
             val uid = user.id
             lifecycleScope.launch {
                 try {
-                    supabase.postgrest["profiles"].update(
-                        mapOf(
-                            "is_online" to false,
-                            "user_status" to "Offline"
-                        )
-                    ) {
+                    val data = ProfileUpdate(isOnline = false, userStatus = "Offline")
+                    supabase.postgrest["profiles"].update(Json.encodeToJsonElement(data)) {
                         filter {
                             eq("id", uid)
                         }

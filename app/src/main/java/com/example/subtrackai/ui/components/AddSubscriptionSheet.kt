@@ -9,7 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,8 +33,10 @@ fun AddSubscriptionSheet(
     initialCycle: String = "Monthly",
     initialDate: String = "",
     initialIsTrial: Boolean = false,
+    initialReminderDays: Int = 3,
+    currency: String = "$",
     onDismiss: () -> Unit,
-    onConfirm: (String, Double, String, String, String, Boolean) -> Unit
+    onConfirm: (String, Double, String, String, String, Boolean, Int) -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
     var price by remember { mutableStateOf(initialPrice) }
@@ -42,8 +44,11 @@ fun AddSubscriptionSheet(
     var renewalDate by remember { mutableStateOf(initialDate) }
     var category by remember { mutableStateOf(initialCategory) }
     var isTrial by remember { mutableStateOf(initialIsTrial) }
+    var reminderDays by remember { mutableStateOf(initialReminderDays) }
     
     val categories = listOf("Streaming", "Gaming", "Music", "Tools", "Finance", "Other")
+    val reminderOptions = (1..25).toList()
+    
     val templates = listOf(
         Triple("Netflix", 15.99, "Streaming"),
         Triple("Spotify", 10.99, "Music"),
@@ -52,6 +57,9 @@ fun AddSubscriptionSheet(
         Triple("ChatGPT Plus", 20.00, "Tools")
     )
     
+    // Store original price to restore after trial toggle
+    var lastEnteredPrice by remember { mutableStateOf(initialPrice) }
+
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
 
@@ -84,42 +92,42 @@ fun AddSubscriptionSheet(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
-            .navigationBarsPadding()
+            .navigationBarsPadding(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                if (initialName.isEmpty()) "Add Subscription" else "Edit Subscription",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = "Close")
-            }
-        }
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = if (initialName.isEmpty()) "Add Subscription" else "Edit Subscription",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Black
+        )
 
         Spacer(modifier = Modifier.height(24.dp))
 
         if (initialName.isEmpty()) {
-            Text("Quick Templates", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(vertical = 8.dp),
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 templates.forEach { (tName, tPrice, tCat) ->
-                    AssistChip(
+                    FilterChip(
+                        selected = name == tName,
                         onClick = {
                             name = tName
-                            price = tPrice.toString()
+                            val pStr = tPrice.toString()
+                            price = if (isTrial) "0.0" else pStr
+                            lastEnteredPrice = pStr
                             category = tCat
                         },
-                        label = { Text(tName) }
+                        label = { Text(tName) },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = DeepPurple.copy(alpha = 0.1f),
+                            selectedLabelColor = DeepPurple
+                        )
                     )
                 }
             }
@@ -129,91 +137,180 @@ fun AddSubscriptionSheet(
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Name") },
+            label = { Text("Service Name") },
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(16.dp),
+            singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = DeepPurple,
+                focusedLabelColor = DeepPurple
+            )
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = price,
-                onValueChange = { price = it },
+                onValueChange = { 
+                    price = it
+                    if (!isTrial) lastEnteredPrice = it
+                },
                 label = { Text("Price") },
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(16.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                prefix = { Text("$") }
+                prefix = { Text(currency, color = Color.Gray) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = DeepPurple,
+                    focusedLabelColor = DeepPurple
+                ),
+                enabled = !isTrial
             )
             
-            Surface(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { showDatePicker = true }
-                    .background(MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        if (renewalDate.isEmpty()) "Renewal Date" else renewalDate,
-                        fontSize = 14.sp,
-                        color = if (renewalDate.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+            Box(modifier = Modifier.weight(1.2f)) {
+                OutlinedTextField(
+                    value = renewalDate,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Renewal Date") },
+                    placeholder = { Text("YYYY-MM-DD") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    leadingIcon = {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = DeepPurple, modifier = Modifier.size(20.dp))
+                    },
+                    enabled = false,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        disabledLeadingIconColor = DeepPurple,
+                        disabledPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
-                }
+                )
+                // Overlay to catch clicks
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { showDatePicker = true }
+                )
             }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text("Category", style = MaterialTheme.typography.labelLarge)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Text("Category", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                categories.forEach { cat ->
+                    FilterChip(
+                        selected = category == cat,
+                        onClick = { category = cat },
+                        label = { Text(cat) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = DeepPurple.copy(alpha = 0.1f),
+                            selectedLabelColor = DeepPurple
+                        )
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Reminder Section Polish with Slider/Scrollable row
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
         ) {
-            categories.forEach { cat ->
-                FilterChip(
-                    selected = category == cat,
-                    onClick = { category = cat },
-                    label = { Text(cat) },
-                    shape = RoundedCornerShape(12.dp)
-                )
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Notifications, contentDescription = null, tint = DeepPurple, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Reminder Settings", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Notify me", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        reminderOptions.forEach { days ->
+                            val isSelected = reminderDays == days
+                            Surface(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { reminderDays = days },
+                                color = if (isSelected) DeepPurple else MaterialTheme.colorScheme.surface,
+                                border = if (!isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)) else null,
+                                contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text("$days", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("days before", fontSize = 14.sp)
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("Free Trial", fontWeight = FontWeight.Bold)
-            Switch(checked = isTrial, onCheckedChange = { isTrial = it })
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Free Trial", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = if (isTrial) "Price automatically set to 0" else "Toggle if currently in trial period", 
+                    style = MaterialTheme.typography.labelSmall, 
+                    color = if (isTrial) DeepPurple else Color.Gray
+                )
+            }
+            Switch(
+                checked = isTrial, 
+                onCheckedChange = { 
+                    isTrial = it 
+                    if (it) {
+                        price = "0.0"
+                    } else {
+                        price = lastEnteredPrice
+                    }
+                },
+                colors = SwitchDefaults.colors(checkedThumbColor = DeepPurple, checkedTrackColor = DeepPurple.copy(alpha = 0.3f))
+            )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-        Text("Billing Cycle", style = MaterialTheme.typography.labelLarge)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            SegmentedButton(
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            SegmentedButtonCustom(
                 selected = billingCycle == "Monthly",
                 onClick = { billingCycle = "Monthly" },
                 label = "Monthly",
                 modifier = Modifier.weight(1f)
             )
-            SegmentedButton(
+            SegmentedButtonCustom(
                 selected = billingCycle == "Yearly",
                 onClick = { billingCycle = "Yearly" },
                 label = "Yearly",
@@ -226,29 +323,29 @@ fun AddSubscriptionSheet(
         Button(
             onClick = {
                 val priceVal = price.toDoubleOrNull() ?: 0.0
-                onConfirm(name, priceVal, billingCycle, renewalDate, category, isTrial)
+                onConfirm(name, priceVal, billingCycle, renewalDate, category, isTrial, reminderDays)
             },
             modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = DeepPurple),
             enabled = name.isNotBlank() && (price.isNotBlank() || isTrial) && renewalDate.isNotBlank()
         ) {
-            Text(if (initialName.isEmpty()) "Add Subscription" else "Save Changes", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(if (initialName.isEmpty()) "Create Subscription" else "Update Details", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         }
     }
 }
 
 @Composable
-fun SegmentedButton(selected: Boolean, onClick: () -> Unit, label: String, modifier: Modifier) {
+fun SegmentedButtonCustom(selected: Boolean, onClick: () -> Unit, label: String, modifier: Modifier) {
     Surface(
         onClick = onClick,
-        modifier = modifier.height(48.dp),
+        modifier = modifier.height(44.dp),
         shape = RoundedCornerShape(12.dp),
-        color = if (selected) DeepPurple else MaterialTheme.colorScheme.surfaceVariant,
+        color = if (selected) DeepPurple else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         contentColor = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text(label, fontWeight = FontWeight.Bold)
+            Text(label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

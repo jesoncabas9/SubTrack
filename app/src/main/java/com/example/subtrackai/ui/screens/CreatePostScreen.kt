@@ -39,7 +39,20 @@ fun CreatePostScreen(
         topBar = {
             TopAppBar(
                 modifier = Modifier.statusBarsPadding(),
-                title = { Text(if (profilePost) "Post to Profile" else "Create Post", fontWeight = FontWeight.Bold) },
+                title = { 
+                    Column {
+                        Text(
+                            text = if (profilePost) "Post to Profile" else "Share to Feed", 
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = if (profilePost) "Visible to visitors" else "Visible to everyone",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -49,18 +62,28 @@ fun CreatePostScreen(
                     Button(
                         onClick = {
                             if (content.isNotBlank()) {
-                                feedViewModel.createPost(content, authorName, profilePost)
+                                feedViewModel.createPost(
+                                    content = content, 
+                                    authorName = authorName, 
+                                    profilePost = profilePost,
+                                    profileIcon = userProfile?.profileIcon,
+                                    avatarUrl = userProfile?.avatarUrl
+                                )
                                 onBack()
                             }
                         },
                         enabled = content.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = DeepPurple),
-                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        shape = RoundedCornerShape(20.dp),
                         modifier = Modifier.padding(end = 8.dp)
                     ) {
-                        Text("Post", color = Color.White)
+                        Text("Post", fontWeight = FontWeight.Bold)
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->
@@ -68,25 +91,42 @@ fun CreatePostScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 com.example.subtrackai.ui.components.ProfileAvatar(
                     iconName = userProfile?.profileIcon,
                     avatarUrl = userProfile?.avatarUrl,
                     modifier = Modifier.size(48.dp),
-                    tint = DeepPurple
+                    tint = MaterialTheme.colorScheme.primary
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(authorName, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(modifier = Modifier.width(14.dp))
+                Column {
+                    Text(
+                        text = userProfile?.fullName ?: "User", 
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "@$authorName", 
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             TextField(
                 value = content,
                 onValueChange = { content = it },
-                placeholder = { Text("What's on your mind?", fontSize = 18.sp) },
+                placeholder = { 
+                    Text(
+                        "What's happening?", 
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                    ) 
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -94,31 +134,32 @@ fun CreatePostScreen(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
                     focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
+                    unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = MaterialTheme.colorScheme.primary
                 ),
-                textStyle = LocalTextStyle.current.copy(fontSize = 18.sp)
+                textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp)
             )
 
-            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
-            // Toolbar
+            // Professional Toolbar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceAround
+                    .padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Start
             ) {
-                ToolButton(icon = Icons.Default.Image, label = "Photo", tint = Color(0xFF4CAF50)) {
-                    android.widget.Toast.makeText(context, "Photo feature coming soon!", android.widget.Toast.LENGTH_SHORT).show()
+                IconButton(onClick = { /* Photo */ }) {
+                    Icon(Icons.Default.Image, contentDescription = "Photo", tint = Color(0xFF4CAF50))
                 }
-                ToolButton(icon = Icons.Default.PersonAdd, label = "Tag", tint = Color(0xFF2196F3)) {
-                    android.widget.Toast.makeText(context, "Tagging feature coming soon!", android.widget.Toast.LENGTH_SHORT).show()
+                IconButton(onClick = { /* Tag */ }) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = "Tag", tint = Color(0xFF2196F3))
                 }
-                ToolButton(icon = Icons.Default.EmojiEmotions, label = "Feeling", tint = Color(0xFFFFC107)) {
-                    android.widget.Toast.makeText(context, "Feelings coming soon!", android.widget.Toast.LENGTH_SHORT).show()
+                IconButton(onClick = { /* Feeling */ }) {
+                    Icon(Icons.Default.EmojiEmotions, contentDescription = "Feeling", tint = Color(0xFFFFC107))
                 }
-                ToolButton(icon = Icons.Default.LocationOn, label = "Check In", tint = Color(0xFFF44336)) {
-                    android.widget.Toast.makeText(context, "Check-in coming soon!", android.widget.Toast.LENGTH_SHORT).show()
+                IconButton(onClick = { /* Location */ }) {
+                    Icon(Icons.Default.LocationOn, contentDescription = "Check In", tint = Color(0xFFF44336))
                 }
             }
         }

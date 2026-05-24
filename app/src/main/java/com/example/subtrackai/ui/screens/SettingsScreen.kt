@@ -50,7 +50,7 @@ fun SettingsScreen(
         ) {
             // User Status Section
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Row(

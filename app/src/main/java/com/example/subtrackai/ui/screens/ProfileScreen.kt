@@ -11,62 +11,64 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.subtrackai.model.UserProfile
-import com.example.subtrackai.ui.components.EditProfileDialog
+import com.example.subtrackai.supabase
 import com.example.subtrackai.ui.theme.DeepPurple
-import com.example.subtrackai.util.ProfileIcons
 import com.example.subtrackai.viewmodel.AuthViewModel
 import com.example.subtrackai.viewmodel.SocialViewModel
+import com.example.subtrackai.viewmodel.FeedViewModel
+import io.github.jan.supabase.auth.auth
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     authViewModel: AuthViewModel,
     socialViewModel: SocialViewModel,
+    feedViewModel: FeedViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
     onBack: () -> Unit,
-    onNavigateToCreatePost: () -> Unit,
-    onNavigateToProfile: (String) -> Unit = {},
-    visitorUserId: String? = null
+    onNavigateToSettings: () -> Unit,
+    onNavigateToChat: (String) -> Unit,
+    targetUid: String? = null
 ) {
-    val currentUserProfile by socialViewModel.userProfile.collectAsState()
-    var visitorProfile by remember { mutableStateOf<UserProfile?>(null) }
-    val myFriends by socialViewModel.friends.collectAsState()
-    val visitorFriends by socialViewModel.visitorFriends.collectAsState()
+    val currentUserId = supabase.auth.currentUserOrNull()?.id
+    val isOwner = targetUid == null || targetUid == currentUserId
     
-    val isOwner = visitorUserId == null || visitorUserId == currentUserProfile?.uid
-    val profile = if (isOwner) currentUserProfile else visitorProfile
-    val friends = if (isOwner) myFriends else visitorFriends
-    
-    val feedViewModel: com.example.subtrackai.viewmodel.FeedViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-    val allPosts by feedViewModel.posts.collectAsState()
-    val profilePosts = allPosts.filter { 
-        it.userId == (visitorUserId ?: currentUserProfile?.uid)
+    val profile by if (isOwner) socialViewModel.userProfile.collectAsState() else {
+        val p = remember { mutableStateOf<com.example.subtrackai.model.UserProfile?>(null) }
+        LaunchedEffect(targetUid) {
+            targetUid?.let { socialViewModel.loadVisitorProfile(it) { profile -> p.value = profile } }
+        }
+        p
     }
 
+    val friends by if (isOwner) socialViewModel.friends.collectAsState() else socialViewModel.visitorFriends.collectAsState()
+    
+    LaunchedEffect(targetUid) {
+        if (!isOwner && targetUid != null) {
+            // Future: make public if direct refresh is needed, currently synced in refresAll
+        }
+    }
+
+    val allPosts by feedViewModel.posts.collectAsState()
+    val profilePosts = remember(allPosts, profile) {
+        allPosts.filter { it.userId == profile?.uid }
+    }
+
+    val isRefreshing by socialViewModel.isRefreshing.collectAsState()
+    val pullToRefreshState = rememberPullToRefreshState()
+
+    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
     var showCommentSheet by remember { mutableStateOf(false) }
     var selectedPostId by remember { mutableStateOf<String?>(null) }
-    
-    var showShareSheet by remember { mutableStateOf(false) }
-    var selectedSharePost by remember { mutableStateOf<com.example.subtrackai.model.Post?>(null) }
-    
-    var showEditDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(visitorUserId) {
-        if (visitorUserId != null) {
-            socialViewModel.loadVisitorProfile(visitorUserId) {
-                visitorProfile = it
-            }
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -80,202 +82,130 @@ fun ProfileScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = { (targetUid ?: currentUserId)?.let { socialViewModel.refreshAll(it) } },
+            state = pullToRefreshState,
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    com.example.subtrackai.ui.components.ProfileAvatar(
-                iconName = profile?.profileIcon,
-                avatarUrl = profile?.avatarUrl,
-                modifier = Modifier.size(100.dp),
-                tint = DeepPurple
-            )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Text(profile?.fullName ?: "User", fontWeight = FontWeight.Bold, fontSize = 24.sp)
-                    Text("@${profile?.username ?: "user"}", color = Color.Gray, fontSize = 16.sp)
-                    Text(profile?.email ?: "", color = Color.Gray, fontSize = 14.sp)
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    if (profile?.uid?.isNotEmpty() == true) {
-                        Surface(
-                            color = if (profile.userStatus == "Online") Color(0xFF4CAF50).copy(alpha = 0.1f) else Color.Gray.copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(if (profile.userStatus == "Online") Color(0xFF4CAF50) else Color.Gray)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = profile.userStatus,
-                                    fontSize = 12.sp,
-                                    color = if (profile.userStatus == "Online") Color(0xFF4CAF50) else Color.Gray
-                                )
-                            }
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    Text(profile?.bio ?: "No bio yet.", modifier = Modifier.padding(horizontal = 32.dp))
-                    
-                    Spacer(modifier = Modifier.height(24.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        ProfileStat("Friends", "${friends.size}")
-                        ProfileStat("Posts", "${profilePosts.size}")
-                    }
-
-                    Spacer(modifier = Modifier.height(32.dp))
-                    
-                    if (isOwner) {
-                        Button(
-                            onClick = { showEditDialog = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
-                        ) {
-                            Text("Edit Profile")
-                        }
-                    } else {
-                        val friendRequests by socialViewModel.friendRequests.collectAsState()
-                        // Use deterministic ID logic for local check
-                        val currentUid = currentUserProfile?.uid ?: ""
-                        val targetUid = profile?.uid ?: ""
-                        
-                        val request = friendRequests.find { 
-                            (it.senderId == currentUid && it.receiverId == targetUid) || 
-                            (it.senderId == targetUid && it.receiverId == currentUid) 
-                        }
-                        val isFriend = myFriends.any { it.uid == targetUid }
-
-                        if (isFriend) {
-                            Button(
-                                onClick = { socialViewModel.unfriendUser(profile?.uid ?: "") },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            ) {
-                                Icon(Icons.Default.PersonRemove, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Unfriend")
-                            }
-                        } else if (request != null && request.status == "pending") {
-                            Button(
-                                onClick = { socialViewModel.cancelFriendRequest(profile?.uid ?: "") },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)
-                            ) {
-                                Text("Cancel Request")
-                            }
-                        } else {
-                            Button(
-                                onClick = { 
-                                    profile?.let { 
-                                        socialViewModel.sendFriendRequest(it)
-                                    } 
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
-                            ) {
-                                Text("Add Friend")
-                            }
-                        }
-                    }
-                }
-
-                if (isOwner) {
-                    HorizontalDivider()
-                    Text(
-                        "Post to Profile", 
-                        modifier = Modifier.padding(16.dp), 
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Card(
+            LazyColumn(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                item {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                            .clickable { onNavigateToCreatePost() },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Edit, contentDescription = null, tint = DeepPurple)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("Write something on your profile...", color = Color.Gray)
+                        com.example.subtrackai.ui.components.ProfileAvatar(
+                    iconName = profile?.profileIcon,
+                    avatarUrl = profile?.avatarUrl,
+                    modifier = Modifier.size(100.dp),
+                    tint = DeepPurple
+                )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Text(profile?.fullName ?: "User", fontWeight = FontWeight.Bold, fontSize = 24.sp)
+                        Text("@${profile?.username ?: "user"}", color = Color.Gray, fontSize = 16.sp)
+                        Text(profile?.email ?: "", color = Color.Gray, fontSize = 14.sp)
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (!isOwner && profile != null) {
+                            val isFriend = friends.any { it.uid == currentUserId }
+                            val hasSentRequest = socialViewModel.friendRequests.collectAsState().value.any { it.receiverId == profile?.uid && it.status == "pending" }
+                            
+                            Row(modifier = Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                if (isFriend) {
+                                    Button(onClick = { onNavigateToChat(profile!!.uid) }, colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)) {
+                                        Icon(Icons.Default.Message, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Message")
+                                    }
+                                    OutlinedButton(onClick = { 
+                                        scope.launch { socialViewModel.unfriendUser(profile!!.uid) }
+                                    }) {
+                                        Text("Unfriend")
+                                    }
+                                } else if (hasSentRequest) {
+                                    OutlinedButton(onClick = { 
+                                        scope.launch { socialViewModel.cancelFriendRequest(profile!!.uid) }
+                                    }) {
+                                        Text("Request Sent")
+                                    }
+                                } else {
+                                    Button(onClick = { 
+                                        profile?.let { scope.launch { socialViewModel.sendFriendRequest(it) } }
+                                    }, colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)) {
+                                        Icon(Icons.Default.PersonAdd, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Add Friend")
+                                    }
+                                }
+                            }
+                        } else if (isOwner) {
+                            Button(
+                                onClick = onNavigateToSettings,
+                                modifier = Modifier.padding(top = 16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = DeepPurple)
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Edit Profile")
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(32.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            ProfileStat("Friends", "${friends.size}")
+                            ProfileStat("Posts", "${profilePosts.size}")
+                        }
+
+                        Spacer(modifier = Modifier.height(24.dp))
+                        HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Text(
+                            "Recent Posts", 
+                            modifier = Modifier.fillMaxWidth(),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                }
+
+                if (profilePosts.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
+                            Text("No posts yet", color = Color.Gray)
                         }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Text(
-                        "My Posts", 
-                        modifier = Modifier.padding(16.dp), 
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium
-                    )
                 } else {
-                    HorizontalDivider()
-                    Text(
-                        "Posts", 
-                        modifier = Modifier.padding(16.dp), 
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-            }
-
-            items(profilePosts) { post ->
-                val currentUserId = currentUserProfile?.uid ?: ""
-                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    PostItem(
-                        post = post,
-                        onLikeToggle = { post.id?.let { feedViewModel.toggleLike(it) } },
-                        onProfileClick = { },
-                        onOriginalProfileClick = { authorId -> 
-                            if (authorId != (visitorUserId ?: currentUserProfile?.uid)) {
-                                onNavigateToProfile(authorId)
-                            }
-                        },
-                        isOwner = post.userId == currentUserId,
-                        onDelete = { post.id?.let { feedViewModel.deletePost(it) } },
-                        onEdit = { newContent -> post.id?.let { feedViewModel.editPost(it, newContent) } },
-                        onCommentClick = { 
-                            selectedPostId = post.id
-                            showCommentSheet = true
-                        },
-                        onShare = { 
-                            selectedSharePost = post
-                            showShareSheet = true
-                        },
-                        onToggleComments = { post.id?.let { feedViewModel.editPost(it, if (post.commentsEnabled) "OFF" else "ON") } },
-                        showFeedTag = true
-                    )
+                    items(profilePosts) { post ->
+                        com.example.subtrackai.ui.screens.PostItem(
+                            post = post,
+                            onLikeToggle = { feedViewModel.toggleLike(post.id ?: "") },
+                            onProfileClick = { },
+                            isOwner = isOwner,
+                            onDelete = { feedViewModel.deletePost(post.id ?: "") },
+                            onEdit = { feedViewModel.editPost(post.id ?: "", it) },
+                            onCommentClick = { 
+                                selectedPostId = post.id
+                                showCommentSheet = true
+                            },
+                            onShare = { },
+                            onToggleComments = { },
+                            showFeedTag = false
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                 }
             }
         }
@@ -292,7 +222,7 @@ fun ProfileScreen(
             ) {
                 CommentSheetContent(
                     postId = selectedPostId!!,
-                    currentUserId = currentUserProfile?.uid ?: "",
+                    currentUserId = currentUserId ?: "",
                     viewModel = feedViewModel,
                     socialViewModel = socialViewModel,
                     onDismiss = { 
@@ -302,44 +232,13 @@ fun ProfileScreen(
                 )
             }
         }
-
-        if (showShareSheet && selectedSharePost != null) {
-            ModalBottomSheet(
-                onDismissRequest = { 
-                    showShareSheet = false
-                    selectedSharePost = null
-                },
-                sheetState = sheetState,
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
-                ShareSheetContent(
-                    post = selectedSharePost!!,
-                    socialViewModel = socialViewModel,
-                    onDismiss = { 
-                        showShareSheet = false
-                        selectedSharePost = null
-                    }
-                )
-            }
-        }
-
-        if (showEditDialog && currentUserProfile != null) {
-            EditProfileDialog(
-                userProfile = currentUserProfile!!,
-                onDismiss = { showEditDialog = false },
-                onConfirm = { name, uname, bio, icon ->
-                    socialViewModel.updateProfile(name, uname, bio, icon)
-                    showEditDialog = false
-                }
-            )
-        }
     }
 }
 
 @Composable
 fun ProfileStat(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        Text(label, fontSize = 14.sp, color = Color.Gray)
+        Text(value, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = DeepPurple)
+        Text(label, color = Color.Gray, fontSize = 14.sp)
     }
 }

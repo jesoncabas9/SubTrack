@@ -1,5 +1,7 @@
 package com.example.subtrackai.ui.screens
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +48,7 @@ fun DashboardScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
     val totalSpend by viewModel.totalMonthlySpend.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     val potentialSavings by viewModel.potentialAnnualSavings.collectAsState()
     val currentCurrency by settingsViewModel.selectedCurrency.collectAsState()
     val showInsights by settingsViewModel.showSmartInsights.collectAsState()
@@ -52,6 +56,7 @@ fun DashboardScreen(
     val socialViewModel: com.example.subtrackai.viewmodel.SocialViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val userProfile by socialViewModel.userProfile.collectAsState()
 
+    val pullToRefreshState = rememberPullToRefreshState()
     var isSearching by remember { mutableStateOf(false) }
     var timeFrame by remember { mutableStateOf("Monthly") } 
     
@@ -101,7 +106,7 @@ fun DashboardScreen(
                         placeholder = { Text("Search subscriptions...") },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 16.dp)
+                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp)
                             .height(52.dp),
                         shape = RoundedCornerShape(24.dp),
                         singleLine = true,
@@ -240,12 +245,21 @@ fun DashboardScreen(
                                 }
                                 
                                 val displaySpend = if (timeFrame == "Monthly") totalSpend else totalSpend * 12
-                                Text(
-                                    "${currentCurrency}${String.format("%.2f", displaySpend)}",
-                                    fontSize = 44.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = Color.White
-                                )
+                                AnimatedContent(
+                                    targetState = displaySpend,
+                                    transitionSpec = {
+                                        fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
+                                    },
+                                    label = "spendAnimation"
+                                ) { spend ->
+                                    Text(
+                                        "${currentCurrency}${String.format("%.2f", spend)}",
+                                        fontSize = 48.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White,
+                                        letterSpacing = (-1).sp
+                                    )
+                                }
 
                                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -387,20 +401,22 @@ fun DashboardScreen(
                 initialCycle = editingSubscription?.billingCycle ?: "Monthly",
                 initialDate = editingSubscription?.renewalDate ?: "",
                 initialIsTrial = editingSubscription?.isTrial ?: false,
+                initialReminderDays = editingSubscription?.reminderDays ?: 3,
+                currency = currentCurrency,
                 onDismiss = { 
                     showDialog = false
                     editingSubscription = null
                 },
-                onConfirm = { name: String, price: Double, cycle: String, date: String, cat: String, isTrial: Boolean ->
+                onConfirm = { name: String, price: Double, cycle: String, date: String, cat: String, isTrial: Boolean, reminder: Int ->
                     if (editingSubscription != null) {
                         editingSubscription?.id?.let {
                             viewModel.updateSubscription(
                                 it,
-                                name, price, cycle, date, cat, isTrial
+                                name, price, cycle, date, cat, isTrial, reminder
                             )
                         }
                     } else {
-                        viewModel.addSubscription(name, price, cycle, date, cat, isTrial)
+                        viewModel.addSubscription(name, price, cycle, date, cat, isTrial, reminder)
                     }
                     showDialog = false
                     editingSubscription = null
@@ -464,8 +480,10 @@ fun SubscriptionItem(subscription: Subscription, currency: String, onClick: () -
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(subscription.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                val cycle = subscription.billingCycle ?: "Monthly"
+                val date = subscription.renewalDate?.takeIf { it.isNotBlank() } ?: "Not set"
                 Text(
-                    "${subscription.billingCycle} • Next: ${subscription.renewalDate}",
+                    "$cycle • Next: $date",
                     fontSize = 13.sp,
                     color = Color.Gray
                 )

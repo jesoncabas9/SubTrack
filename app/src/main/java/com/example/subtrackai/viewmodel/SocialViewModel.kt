@@ -8,26 +8,29 @@ import com.example.subtrackai.supabase
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.postgrest
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.filter.FilterOperator
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
 
 class SocialViewModel : ViewModel() {
 
     private val _userProfile = MutableStateFlow<UserProfile?>(null)
-    val userProfile = _userProfile.asStateFlow()
+    val userProfile: StateFlow<UserProfile?> = _userProfile.asStateFlow()
 
     private val _friends = MutableStateFlow<List<UserProfile>>(emptyList())
-    val friends = _friends.asStateFlow()
+    val friends: StateFlow<List<UserProfile>> = _friends.asStateFlow()
 
     private val _friendRequests = MutableStateFlow<List<FriendRequest>>(emptyList())
-    val friendRequests = _friendRequests.asStateFlow()
+    val friendRequests: StateFlow<List<FriendRequest>> = _friendRequests.asStateFlow()
 
     private val _visitorFriends = MutableStateFlow<List<UserProfile>>(emptyList())
     val visitorFriends = _visitorFriends.asStateFlow()
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing = _isRefreshing.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -46,7 +49,20 @@ class SocialViewModel : ViewModel() {
         }
     }
 
-    private fun observeFriends(uid: String) {
+    fun refreshAll(uid: String) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            try {
+                loadCurrentUserProfile(uid)
+                observeFriendRequests(uid)
+                observeFriends(uid)
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
+    private    fun observeFriends(uid: String) {
         viewModelScope.launch {
             try {
                 val requests = supabase.postgrest["friend_requests"]
@@ -61,27 +77,27 @@ class SocialViewModel : ViewModel() {
                     }
                     .decodeList<FriendRequest>()
                 
-                val friendIds = requests.map { if (it.senderId == uid) it.receiverId else it.senderId }.filter { it != uid }
-                
-                if (friendIds.isNotEmpty()) {
-                    val users = supabase.postgrest["profiles"]
-                        .select {
-                            filter {
-                                isIn("id", friendIds)
-                            }
-                        }
-                        .decodeList<UserProfile>()
-                    _friends.value = users
-                } else {
+                val friendIds = requests.map { if (it.senderId == uid) it.receiverId else it.senderId }
+                if (friendIds.isEmpty()) {
                     _friends.value = emptyList()
+                    return@launch
                 }
+                
+                val friendProfiles = supabase.postgrest["profiles"]
+                    .select {
+                        filter {
+                            filter("id", FilterOperator.IN, "(${friendIds.joinToString(",")})")
+                        }
+                    }
+                    .decodeList<UserProfile>()
+                _friends.value = friendProfiles
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error observing friends: ${e.message}", e)
+                Log.e("SocialViewModel", "Error observing friends: ${e.message}")
             }
         }
     }
 
-    private fun loadCurrentUserProfile(uid: String) {
+    fun loadCurrentUserProfile(uid: String) {
         viewModelScope.launch {
             try {
                 val profile = supabase.postgrest["profiles"]
@@ -91,30 +107,24 @@ class SocialViewModel : ViewModel() {
                         }
                     }
                     .decodeSingleOrNull<UserProfile>()
-                
-                if (profile != null) {
-                    _userProfile.value = profile
-                } else {
-                    Log.w("SocialViewModel", "Profile not found for UID: $uid")
-                }
+                _userProfile.value = profile
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error loading profile: ${e.message}", e)
+                Log.e("SocialViewModel", "Error loading profile: ${e.message}")
             }
         }
     }
 
     fun toggleOnlineStatus(isOnline: Boolean) {
-        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        val uid = _userProfile.value?.uid ?: return
         viewModelScope.launch {
             try {
-                supabase.postgrest["profiles"].update(
-                    buildJsonObject { put("is_online", isOnline) }
-                ) {
+                val data = ProfileUpdate(isOnline = isOnline)
+                supabase.postgrest["profiles"].update(Json.encodeToJsonElement(data)) {
                     filter { eq("id", uid) }
                 }
                 loadCurrentUserProfile(uid)
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error toggling status: ${e.message}", e)
+                Log.e("SocialViewModel", "Error toggling online status: ${e.message}")
             }
         }
     }
@@ -130,15 +140,14 @@ class SocialViewModel : ViewModel() {
                     }
                     .decodeSingleOrNull<UserProfile>()
                 onResult(profile)
-                observeVisitorFriends(uid)
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error loading visitor profile: ${e.message}", e)
+                Log.e("SocialViewModel", "Error loading visitor profile")
                 onResult(null)
             }
         }
     }
 
-    private fun observeVisitorFriends(uid: String) {
+    fun observeVisitorFriends(uid: String) {
         viewModelScope.launch {
             try {
                 val requests = supabase.postgrest["friend_requests"]
@@ -153,43 +162,39 @@ class SocialViewModel : ViewModel() {
                     }
                     .decodeList<FriendRequest>()
                 
-                val friendIds = requests.map { if (it.senderId == uid) it.receiverId else it.senderId }.filter { it != uid }
-                
-                if (friendIds.isNotEmpty()) {
-                    val users = supabase.postgrest["profiles"]
-                        .select {
-                            filter {
-                                isIn("id", friendIds)
-                            }
-                        }
-                        .decodeList<UserProfile>()
-                    _visitorFriends.value = users
-                } else {
+                val friendIds = requests.map { if (it.senderId == uid) it.receiverId else it.senderId }
+                if (friendIds.isEmpty()) {
                     _visitorFriends.value = emptyList()
+                    return@launch
                 }
+                
+                val friendProfiles = supabase.postgrest["profiles"]
+                    .select {
+                        filter {
+                            filter("id", FilterOperator.IN, "(${friendIds.joinToString(",")})")
+                        }
+                    }
+                    .decodeList<UserProfile>()
+                _visitorFriends.value = friendProfiles
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error observing visitor friends", e)
+                Log.e("SocialViewModel", "Error observing visitor friends: ${e.message}")
             }
         }
     }
 
-    private fun observeFriendRequests(uid: String) {
+    fun observeFriendRequests(uid: String) {
         viewModelScope.launch {
             try {
                 val requests = supabase.postgrest["friend_requests"]
                     .select {
                         filter {
-                            eq("status", "pending")
-                            or {
-                                eq("sender_id", uid)
-                                eq("receiver_id", uid)
-                            }
+                            eq("receiver_id", uid)
                         }
                     }
                     .decodeList<FriendRequest>()
                 _friendRequests.value = requests
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error observing requests", e)
+                Log.e("SocialViewModel", "Error observing friend requests: ${e.message}")
             }
         }
     }
@@ -197,270 +202,230 @@ class SocialViewModel : ViewModel() {
     fun searchUsers(query: String, onResult: (List<UserProfile>) -> Unit) {
         viewModelScope.launch {
             try {
-                val currentUid = supabase.auth.currentUserOrNull()?.id
-                val users = supabase.postgrest["profiles"]
+                val results = supabase.postgrest["profiles"]
                     .select {
                         filter {
                             ilike("username", "%$query%")
                         }
                     }
                     .decodeList<UserProfile>()
-                    .filter { it.uid != currentUid }
-                onResult(users)
+                onResult(results)
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error searching users", e)
+                Log.e("SocialViewModel", "Error searching users")
                 onResult(emptyList())
             }
         }
     }
 
-    fun sendFriendRequest(toUser: UserProfile) {
-        val user = supabase.auth.currentUserOrNull() ?: return
-        if (toUser.uid == user.id) return 
-        
-        val request = FriendRequest(
-            senderId = user.id,
-            senderName = _userProfile.value?.username ?: "Unknown",
-            receiverId = toUser.uid,
-            status = "pending"
-        )
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["friend_requests"].insert(request)
-                observeFriendRequests(user.id)
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error sending request: ${e.message}", e)
-            }
+    suspend fun sendFriendRequest(targetUser: UserProfile) {
+        val currentUserId = _userProfile.value?.uid ?: return
+        val currentUserName = _userProfile.value?.username ?: "Someone"
+        try {
+            val data = FriendRequestInsert(
+                    senderId = currentUserId,
+                    receiverId = targetUser.uid,
+                    senderName = currentUserName
+                )
+            supabase.postgrest["friend_requests"].insert(Json.encodeToJsonElement(data))
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error sending friend request: ${e.message}")
         }
     }
 
-    fun cancelFriendRequest(toUserId: String) {
-        val user = supabase.auth.currentUserOrNull() ?: return
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["friend_requests"].delete {
-                    filter {
-                        eq("sender_id", user.id)
-                        eq("receiver_id", toUserId)
-                    }
+    suspend fun cancelFriendRequest(receiverId: String) {
+        val senderId = _userProfile.value?.uid ?: return
+        try {
+            supabase.postgrest["friend_requests"].delete {
+                filter {
+                    eq("sender_id", senderId)
+                    eq("receiver_id", receiverId)
                 }
-                observeFriendRequests(user.id)
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error canceling request", e)
             }
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error canceling friend request: ${e.message}")
         }
     }
 
-    fun unfriendUser(toUserId: String) {
-        val user = supabase.auth.currentUserOrNull() ?: return
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["friend_requests"].delete {
-                    filter {
-                        or {
-                            and {
-                                eq("sender_id", user.id)
-                                eq("receiver_id", toUserId)
-                            }
-                            and {
-                                eq("sender_id", toUserId)
-                                eq("receiver_id", user.id)
-                            }
+    suspend fun unfriendUser(friendId: String) {
+        val uid = _userProfile.value?.uid ?: return
+        try {
+            supabase.postgrest["friend_requests"].delete {
+                filter {
+                    or {
+                        and {
+                            eq("sender_id", uid)
+                            eq("receiver_id", friendId)
+                        }
+                        and {
+                            eq("sender_id", friendId)
+                            eq("receiver_id", uid)
                         }
                     }
                 }
-                observeFriends(user.id)
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error unfriending", e)
             }
+            observeFriends(uid)
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error unfriending user: ${e.message}")
         }
     }
 
-    fun acceptFriendRequest(request: FriendRequest) {
-        val requestId = request.id ?: return
-        val user = supabase.auth.currentUserOrNull() ?: return
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["friend_requests"].update(
-                    buildJsonObject { put("status", "accepted") }
-                ) {
-                    filter {
-                        eq("id", requestId)
-                    }
+    suspend fun acceptFriendRequest(request: FriendRequest) {
+        try {
+            val data = FriendRequestUpdate(status = "accepted")
+            supabase.postgrest["friend_requests"].update(Json.encodeToJsonElement(data)) {
+                filter {
+                    eq("id", request.id ?: "")
                 }
-                observeFriendRequests(user.id)
-                observeFriends(user.id)
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error accepting request", e)
             }
+            val uid = _userProfile.value?.uid ?: return
+            observeFriends(uid)
+            observeFriendRequests(uid)
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error accepting friend request: ${e.message}")
         }
     }
 
     fun updateCurrency(currency: String) {
-        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        val uid = _userProfile.value?.uid ?: return
         viewModelScope.launch {
             try {
-                supabase.postgrest["profiles"].update(
-                    buildJsonObject { put("currency", currency) }
-                ) {
-                    filter {
-                        eq("id", uid)
-                    }
+                val data = ProfileUpdate(currency = currency)
+                supabase.postgrest["profiles"].update(Json.encodeToJsonElement(data)) {
+                    filter { eq("id", uid) }
                 }
                 loadCurrentUserProfile(uid)
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error updating currency", e)
+                Log.e("SocialViewModel", "Error updating currency: ${e.message}")
             }
         }
     }
 
     fun updateUserStatus(status: String) {
-        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+        val uid = _userProfile.value?.uid ?: return
         viewModelScope.launch {
             try {
-                supabase.postgrest["profiles"].update(
-                    buildJsonObject { 
-                        put("user_status", status)
-                        put("is_online", status == "Online")
-                    }
-                ) {
-                    filter {
-                        eq("id", uid)
-                    }
+                val data = ProfileUpdate(userStatus = status)
+                supabase.postgrest["profiles"].update(Json.encodeToJsonElement(data)) {
+                    filter { eq("id", uid) }
                 }
                 loadCurrentUserProfile(uid)
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error updating status", e)
+                Log.e("SocialViewModel", "Error updating status: ${e.message}")
             }
         }
     }
 
-    fun addComment(postId: String, content: String, profileIcon: String, parentCommentId: String? = null) {
+    suspend fun addComment(postId: String, content: String, profileIcon: String, avatarUrl: String? = null, parentCommentId: String? = null) {
+        Log.d("SV_DEBUG", "addComment started")
         val user = supabase.auth.currentUserOrNull() ?: return
-        val comment = Comment(
-            postId = postId,
-            userId = user.id,
-            authorName = _userProfile.value?.username ?: "User",
-            profileIcon = profileIcon,
-            content = content,
-            parentCommentId = parentCommentId
-        )
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["comments"].insert(comment)
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error adding comment: ${e.message}", e)
-            }
+        try {
+            val data = CommentInsert(
+                postId = postId,
+                userId = user.id,
+                authorName = _userProfile.value?.username ?: "User",
+                profileIcon = profileIcon,
+                avatarUrl = avatarUrl,
+                text = content,
+                parentCommentId = parentCommentId
+            )
+            Log.d("SV_DEBUG", "Inserting: $data")
+            supabase.postgrest["comments"].insert(Json.encodeToJsonElement(data))
+            Log.d("SV_DEBUG", "Insert successful")
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error adding comment: ${e.message}")
         }
     }
 
-    fun editComment(postId: String, commentId: String, newText: String) {
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["comments"].update(
-                    buildJsonObject { put("content", newText) }
-                ) {
-                    filter {
-                        eq("id", commentId)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error editing comment", e)
+    suspend fun editComment(postId: String, commentId: String, newText: String) {
+        Log.d("SV_DEBUG", "editComment: id=$commentId, newText=$newText")
+        try {
+            val data = CommentUpdate(text = newText)
+            val result = supabase.postgrest["comments"].update(Json.encodeToJsonElement(data)) {
+                filter { eq("id", commentId) }
             }
+            Log.d("SV_DEBUG", "Edit successful: $result")
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error editing comment: ${e.message}", e)
         }
     }
 
-    fun deleteComment(postId: String, commentId: String) {
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["comments"].delete {
-                    filter {
-                        eq("id", commentId)
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error deleting comment", e)
+    suspend fun deleteComment(postId: String, commentId: String) {
+        Log.d("SV_DEBUG", "deleteComment: id=$commentId")
+        try {
+            val result = supabase.postgrest["comments"].delete {
+                filter { eq("id", commentId) }
             }
+            Log.d("SV_DEBUG", "Delete successful: $result")
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error deleting comment: ${e.message}", e)
         }
     }
 
     fun toggleCommentsEnabled(postId: String, enabled: Boolean) {
         viewModelScope.launch {
             try {
-                supabase.postgrest["posts"].update(
-                    buildJsonObject { put("comments_enabled", enabled) }
-                ) {
-                    filter {
-                        eq("id", postId)
-                    }
+                val data = PostUpdate(commentsEnabled = enabled)
+                supabase.postgrest["posts"].update(Json.encodeToJsonElement(data)) {
+                    filter { eq("id", postId) }
                 }
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error toggling comments", e)
+                Log.e("SocialViewModel", "Error toggling comments: ${e.message}")
             }
         }
     }
 
-    fun sharePostToProfile(post: Post) {
+    suspend fun sharePostToProfile(post: Post) {
         val user = supabase.auth.currentUserOrNull() ?: return
-        val sharedPost = Post(
-            userId = user.id,
-            authorName = _userProfile.value?.username ?: "User",
-            content = post.content,
-            shared = true,
-            originalPostId = if (post.shared) post.originalPostId else post.id,
-            originalAuthorName = if (post.shared) post.originalAuthorName else post.authorName,
-            originalAuthorId = if (post.shared) post.originalAuthorId else post.userId,
-            likes = 0,
-            likedBy = emptyList(),
-            commentsEnabled = true,
-            profilePost = true
-        )
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["posts"].insert(sharedPost)
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error sharing post", e)
-            }
+        try {
+            val data = PostInsert(
+                userId = user.id,
+                authorName = _userProfile.value?.username ?: "User",
+                content = post.content,
+                profileIcon = _userProfile.value?.profileIcon,
+                avatarUrl = _userProfile.value?.avatarUrl,
+                shared = true,
+                originalPostId = post.id,
+                originalAuthorName = post.authorName,
+                originalAuthorId = post.userId,
+                profilePost = true
+            )
+            supabase.postgrest["posts"].insert(Json.encodeToJsonElement(data))
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error sharing to profile")
         }
     }
 
-    fun sharePostInChat(post: Post, receiverId: String) {
+    suspend fun sharePostInChat(post: Post, friendId: String) {
         val user = supabase.auth.currentUserOrNull() ?: return
-        val message = Message(
-            senderId = user.id,
-            receiverId = receiverId,
-            text = "Shared a post: ${post.content}\nby ${post.authorName}"
-        )
-        viewModelScope.launch {
-            try {
-                supabase.postgrest["messages"].insert(message)
-            } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error sharing post in chat", e)
-            }
+        try {
+            val data = MessageInsert(
+                senderId = user.id,
+                receiverId = friendId,
+                text = "Shared a post: ${post.content}"
+            )
+            supabase.postgrest["messages"].insert(Json.encodeToJsonElement(data))
+        } catch (e: Exception) {
+            Log.e("SocialViewModel", "Error sharing in chat")
         }
     }
 
-    fun updateProfile(fullName: String, username: String, bio: String, icon: String) {
-        val uid = supabase.auth.currentUserOrNull()?.id ?: return
+    fun updateProfile(fullName: String, bio: String, icon: String, avatarUrl: String) {
+        val uid = _userProfile.value?.uid ?: return
         viewModelScope.launch {
             try {
-                supabase.postgrest["profiles"].update(
-                    buildJsonObject { 
-                        put("full_name", fullName)
-                        put("username", username)
-                        put("bio", bio)
-                        put("profile_icon", icon)
-                    }
-                ) {
-                    filter {
-                        eq("id", uid)
-                    }
+                val data = ProfileUpdate(
+                        fullName = fullName,
+                        bio = bio,
+                        profileIcon = icon,
+                        avatarUrl = avatarUrl
+                    )
+                supabase.postgrest["profiles"].update(Json.encodeToJsonElement(data)) {
+                    filter { eq("id", uid) }
                 }
                 loadCurrentUserProfile(uid)
             } catch (e: Exception) {
-                Log.e("SocialViewModel", "Error updating profile", e)
+                Log.e("SocialViewModel", "Error updating profile: ${e.message}")
             }
         }
     }
 }
-

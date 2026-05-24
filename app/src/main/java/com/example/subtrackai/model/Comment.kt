@@ -9,8 +9,9 @@ data class Comment(
     @SerialName("post_id") val postId: String = "",
     @SerialName("user_id") val userId: String = "",
     @SerialName("author_name") val authorName: String = "",
-    @SerialName("content") val content: String = "",
+    @SerialName("text") val text: String = "",
     @SerialName("profile_icon") val profileIcon: String = "Person",
+    @SerialName("avatar_url") val avatarUrl: String? = null,
     @SerialName("parent_comment_id") val parentCommentId: String? = null,
     @SerialName("created_at") val createdAt: String? = null
 )

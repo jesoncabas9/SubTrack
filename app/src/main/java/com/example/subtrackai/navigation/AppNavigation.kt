@@ -161,8 +161,11 @@ fun AppNavigation() {
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
                             onBack = { navController.popBackStack() },
-                            onNavigateToCreatePost = { navController.navigate("create_post_profile") },
-                            onNavigateToProfile = { userId -> navController.navigate("profile_view/$userId") }
+                            onNavigateToSettings = { navController.navigate(BottomNavItem.Settings.route) },
+                            onNavigateToChat = { userId -> 
+                                // Reset selected user in main screen context if needed
+                                navController.navigate(BottomNavItem.Chat.route) 
+                            }
                         )
                     }
 
@@ -172,9 +175,12 @@ fun AppNavigation() {
                             authViewModel = authViewModel,
                             socialViewModel = socialViewModel,
                             onBack = { navController.popBackStack() },
-                            onNavigateToCreatePost = {}, 
-                            onNavigateToProfile = { otherId -> navController.navigate("profile_view/$otherId") },
-                            visitorUserId = userId
+                            onNavigateToSettings = { },
+                            onNavigateToChat = { id ->
+                                // Logic to open specific chat
+                                navController.navigate(BottomNavItem.Chat.route)
+                            },
+                            targetUid = userId
                         )
                     }
                     
@@ -358,7 +364,12 @@ fun MainScreen(
                             }
                         }
                         IconButton(onClick = onNavigateToProfile) {
-                            Icon(Icons.Default.AccountCircle, contentDescription = "Profile")
+                            com.example.subtrackai.ui.components.ProfileAvatar(
+                                iconName = userProfile?.profileIcon,
+                                avatarUrl = userProfile?.avatarUrl,
+                                modifier = Modifier.size(32.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 )
@@ -421,7 +432,10 @@ fun MainScreen(
             }
             composable(BottomNavItem.Notifications.route) {
                 val dashboardViewModel: DashboardViewModel = viewModel()
-                NotificationScreen(dashboardViewModel = dashboardViewModel)
+                NotificationScreen(
+                    dashboardViewModel = dashboardViewModel,
+                    socialViewModel = socialViewModel
+                )
             }
             composable(BottomNavItem.Settings.route) {
                 SettingsScreen(
